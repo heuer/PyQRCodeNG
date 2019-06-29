@@ -447,7 +447,7 @@ class QRCode:
         code too small to be read efficiently. Increasing the scale will make
         the code larger. Only integer scales are usable. This method will
         attempt to coerce the parameter into an integer (e.g. 2.5 will become 2,
-        and '3' will become 3). You can use the :py:meth:`get_png_size` method
+        and '3' will become 3). You can use the :py:meth:`symbol_size` method
         to calculate the actual pixel size of the resulting PNG image.
 
         The *module_color* parameter sets what color to use for the encoded
@@ -546,7 +546,7 @@ class QRCode:
         code too small to be read efficiently. Increasing the scale will make
         the code larger. Only integer scales are usable. This method will
         attempt to coerce the parameter into an integer (e.g. 2.5 will become 2,
-        and '3' will become 3). You can use the :py:meth:`get_png_size` method
+        and '3' will become 3). You can use the :py:meth:`symbol_size` method
         to calculate the actual pixel size of this image when displayed.
 
         The *quiet_zone* parameter sets how wide the quiet zone around the code

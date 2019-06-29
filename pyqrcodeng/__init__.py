@@ -93,7 +93,7 @@ def create(content, error='H', version=None, mode=None, encoding=None):
     The *encoding* parameter specifies how the content will be interpreted.
     This parameter only matters if the *content* is a string, unicode, or
     byte array type. This parameter must be a valid encoding string or None. 
-    t will be passed the *content*'s encode/decode methods.
+    It will be passed the *content*'s encode/decode methods.
     """
     return QRCode(content, error, version, mode, encoding)
 
@@ -115,7 +115,7 @@ class QRCode:
         >>> number.png('big-number.png')
 
     .. note::
-        For what all of the parameters do, see the :func:`pyqrcode.create`
+        For what all of the parameters do, see the :func:`pyqrcodeng.create`
         function.
     """
     def __init__(self, content, error='H', version=None, mode=None,

@@ -127,11 +127,11 @@ class QRCodeBuilder:
             raise ValueError('{0} is not a valid error level.'.format(error))
 
         # Guess the "best" version
-        guessed_version = self._pick_best_fit(self.data)
+        guessed_version = QRCodeBuilder._pick_best_fit(self.data, error=self.error,
+                                                       mode_num=self.mode_num)
         if version is None:
             version = guessed_version
             self.version = version
-
         # If the user supplied a version, then check that it has
         # sufficient data capacity for the contents passed in
         if guessed_version > version:
@@ -241,17 +241,18 @@ class QRCodeBuilder:
         # All of the other attempts failed. The content can only be binary.
         return 'binary', encoding
 
-    def _pick_best_fit(self, content):
+    @staticmethod
+    def _pick_best_fit(content, error, mode_num):
         """This method return the smallest possible QR code version number
         that will fit the specified data with the given error level.
         """
         for version in range(1, 41):
             # Get the maximum possible capacity
-            capacity = tables.data_capacity[version][self.error][self.mode_num]
+            capacity = tables.data_capacity[version][error][mode_num]
             # Check the capacity
             # Kanji's count in the table is "characters" which are two bytes
-            if (self.mode_num == tables.modes['kanji'] and
-                capacity >= math.ceil(len(content) / 2)):
+            if mode_num == tables.modes['kanji'] \
+                    and capacity >= math.ceil(len(content) / 2):
                 return version
             if capacity >= len(content):
                 return version

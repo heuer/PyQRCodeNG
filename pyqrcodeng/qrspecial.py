@@ -287,7 +287,7 @@ class QrShortMessage(QrSpecial):
         Examples:
             >>> qrs = QrShortMessage('+39070653263', 'I like your code!')
             >>> print(repr(qrs))
-            <QrMessage>
+            <QrShortMessage>
             number: +39070653263
             text: I like your code!
             >>> print(qrs)
@@ -444,7 +444,7 @@ class QrMeCard(QrSpecial):
         Examples:
             >>> qrs = QrMeCard('Py Thon', email=('py@py.org', 'thon@py.org'))
             >>> print(repr(qrs))
-            <QrContact>
+            <QrMeCard>
             name: Py Thon
             email: py@py.org
             email: thon@py.org
@@ -455,7 +455,7 @@ class QrMeCard(QrSpecial):
 
             >>> qrs = QrMeCard('QrSpecial', birthday=20160904)
             >>> print(repr(qrs))
-            <QrContact>
+            <QrMeCard>
             name: QrSpecial
             birthday: 20160904
             >>> print(str(qrs))

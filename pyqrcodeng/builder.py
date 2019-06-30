@@ -12,6 +12,7 @@ This module does not belong to the public API.
 """
 from __future__ import absolute_import, division, print_function, unicode_literals
 import io
+import math
 import codecs
 import itertools
 from itertools import chain
@@ -23,10 +24,16 @@ try:  # pragma: no cover
     from itertools import zip_longest
 except ImportError:  # pragma: no cover
     # Py2
-    from itertools import izip_longest as zip_longest
+    from itertools import izip_longest as zip_longest, imap as map
     range = xrange
     str = unicode
     open = io.open
+_PYPNG_AVAILABLE = False
+try:
+    import png
+    _PYPNG_AVAILABLE = True
+except ImportError:
+    pass
 
 # <https://wiki.python.org/moin/PortingToPy3k/BilingualQuickRef#New_Style_Classes>
 __metaclass__ = type
@@ -55,30 +62,90 @@ class QRCodeBuilder:
     QR code Debugger:
         http://qrlogo.kaarposoft.dk/qrdecode.html
     """
-    def __init__(self, data, version, mode, error):
+    def __init__(self, content, version, mode, error, encoding=None):
         """See :py:class:`pyqrcode.QRCode` for information on the parameters."""
-        # Set what data we are going to use to generate
-        # the QR code
-        self.data = data
 
-        # Check that the user passed in a valid mode
-        if mode in tables.modes:
-            self.mode = tables.modes[mode]
+        # Guess the mode of the code, this will also be used for
+        # error checking
+        guessed_content_type, encoding = QRCodeBuilder._detect_content_type(content, encoding)
+
+        encoding_provided = encoding is not None
+        if encoding is None:
+            encoding = 'iso-8859-1'
+
+        # Store the encoding for use later
+        if guessed_content_type == 'kanji':
+            self.encoding = 'shiftjis'
         else:
-            raise ValueError('{0} is not a valid mode.'.format(mode))
+            self.encoding = encoding
 
+        if version is not None:
+            if 1 <= version <= 40:
+                self.version = version
+            else:
+                raise ValueError("Illegal version {0}, version must be between "
+                                 "1 and 40.".format(version))
+
+
+        # Decode a 'byte array' contents into a string format
+        if isinstance(content, bytes):
+            self.data = content.decode(encoding)
+        # Give a string an encoding
+        elif hasattr(content, 'encode'):
+            try:
+                self.data = content.encode(self.encoding)
+            except UnicodeEncodeError as ex:
+                if not encoding_provided:
+                    self.encoding = 'utf-8'
+                    self.data = content.encode(self.encoding)
+                else:
+                    raise ex
+        else:
+            # The contents are not a byte array or string, so
+            # try naively converting to a string representation.
+            self.data = str(content)  # str == unicode in Py 2.x, see file head
+
+        if mode is None:
+            # Use the guessed mode
+            mode = guessed_content_type
+        else:
+            # Force a passed in mode to be lowercase
+            mode = mode.lower()
+            try:
+                self.mode_num = tables.modes[mode]
+            except KeyError:
+                raise ValueError('{0} is not a valid mode.'.format(mode))
+            if guessed_content_type != mode:
+                # Binary is only guessed as a last resort, if the
+                # passed in mode is not binary the data won't encode
+                if guessed_content_type == 'binary':
+                    raise ValueError('The content provided cannot be encoded with '
+                                     'the mode {}, it can only be encoded as '
+                                     'binary.'.format(mode))
+                elif mode in ('numeric', 'kanji'):
+                    raise ValueError('The content cannot be encoded as {0}. Proposal: "{1}".'.format(mode, guessed_content_type))
+        self.mode = mode
+        self.mode_num = tables.modes[mode]
         # Check that the user passed in a valid error level
-        if error in tables.error_level:
+        try:
             self.error = tables.error_level[error]
-        else:
-            raise ValueError('{0} is not a valid error '
-                             'level.'.format(error))
+        except KeyError:
+            raise ValueError('{0} is not a valid error level.'.format(error))
 
-        if 1 <= version <= 40:
+        # Guess the "best" version
+        guessed_version = QRCodeBuilder._pick_best_fit(self.data, error=self.error,
+                                                       mode_num=self.mode_num)
+        if version is None:
+            version = guessed_version
             self.version = version
-        else:
-            raise ValueError("Illegal version {0}, version must be between "
-                             "1 and 40.".format(version))
+        # If the user supplied a version, then check that it has
+        # sufficient data capacity for the contents passed in
+        if guessed_version > version:
+            raise ValueError('The data will not fit inside a version {} '
+                             'code with the given encoding and error '
+                             'level (the code must be at least a '
+                             'version {}).'.format(version, guessed_version))
+
         # Look up the proper row for error correction code words
         self.error_code_words = tables.eccwbi[version][self.error]
         # This property will hold the binary string as it is built
@@ -87,6 +154,117 @@ class QRCodeBuilder:
         self.add_data()
         # Create the actual QR code
         self.make_code()
+
+    @staticmethod
+    def _detect_content_type(content, encoding):
+        """This method tries to auto-detect the type of the data. It first
+        tries to see if the data is a valid integer, in which case it returns
+        numeric. Next, it tests the data to see if it is 'alphanumeric.' QR
+        Codes use a special table with very limited range of ASCII characters.
+        The code's data is tested to make sure it fits inside this limited
+        range. If all else fails, the data is determined to be of type
+        'binary.'
+
+        Returns a tuple containing the detected mode and encoding.
+
+        Note, encoding ECI is not yet implemented.
+        """
+        def two_bytes(c):
+            """Output two byte character code as a single integer."""
+            def next_byte(b):
+                """Make sure that character code is an int. Python 2 and
+                3 compatibility.
+                """
+                if not isinstance(b, int):
+                    return ord(b)
+                else:
+                    return b
+
+            # Go through the data by looping to every other character
+            for i in range(0, len(c), 2):
+                yield (next_byte(c[i]) << 8) | next_byte(c[i+1])
+
+        # See if the data is a number
+        try:
+            if str(content).isdigit():
+                return 'numeric', encoding
+        except (TypeError, UnicodeError):
+            pass
+
+        # See if that data is alphanumeric based on the standards
+        # special ASCII table
+        valid_characters = ''.join(tables.ascii_codes.keys())
+
+        # Force the characters into a byte array
+        valid_characters = valid_characters.encode('ASCII')
+
+        try:
+            if isinstance(content, bytes):
+                c = content.decode('ASCII')
+            else:
+                c = str(content).encode('ASCII')
+            if all(map(lambda x: x in valid_characters, c)):
+                return 'alphanumeric', 'ASCII'
+        # This occurs if the content does not contain ASCII characters.
+        # Since the whole point of the if statement is to look for ASCII
+        # characters, the resulting mode should not be alphanumeric.
+        # Hence, this is not an error.
+        except TypeError:
+            pass
+        except UnicodeError:
+            pass
+
+        try:
+            if isinstance(content, bytes):
+                if encoding is None:
+                    encoding = 'shiftjis'
+                c = content.decode(encoding).encode('shiftjis')
+            else:
+                c = content.encode('shiftjis')
+
+            # All kanji characters must be two bytes long, make sure the
+            # string length is not odd.
+            if len(c) % 2 != 0:
+                return 'binary', encoding
+
+            # Take sure the characters are actually in range.
+            for asint in two_bytes(c):
+                # Shift the two byte value as indicated by the standard
+                if not (0x8140 <= asint <= 0x9FFC or
+                        0xE040 <= asint <= 0xEBBF):
+                    return 'binary', encoding
+            return 'kanji', encoding
+        except UnicodeError:
+            # This occurs if the content does not contain Shift JIS kanji
+            # characters. Hence, the resulting mode should not be kanji.
+            # This is not an error.
+            pass
+        except LookupError:
+            # This occurs if the host Python does not support Shift JIS kanji
+            # encoding. Hence, the resulting mode should not be kanji.
+            # This is not an error.
+            pass
+        # All of the other attempts failed. The content can only be binary.
+        return 'binary', encoding
+
+    @staticmethod
+    def _pick_best_fit(content, error, mode_num):
+        """This method return the smallest possible QR code version number
+        that will fit the specified data with the given error level.
+        """
+        for version in range(1, 41):
+            # Get the maximum possible capacity
+            capacity = tables.data_capacity[version][error][mode_num]
+            # Check the capacity
+            # Kanji's count in the table is "characters" which are two bytes
+            if mode_num == tables.modes['kanji'] \
+                    and capacity >= math.ceil(len(content) / 2):
+                return version
+            if capacity >= len(content):
+                return version
+        raise ValueError('The data will not fit in any QR code version '
+                         'with the given encoding and error level.')
+
 
     @staticmethod
     def grouper(n, iterable, fillvalue=None):
@@ -122,8 +300,8 @@ class QRCodeBuilder:
             max_version = 26
         elif 27 <= self.version <= 40:
             max_version = 40
-        data_length = tables.data_length_field[max_version][self.mode]
-        if self.mode != tables.modes['kanji']:
+        data_length = tables.data_length_field[max_version][self.mode_num]
+        if self.mode_num != tables.modes['kanji']:
             length_string = QRCodeBuilder.binary_string(len(self.data), data_length)
         else:
             length_string = QRCodeBuilder.binary_string(len(self.data) / 2, data_length)
@@ -136,13 +314,13 @@ class QRCodeBuilder:
         """This method encodes the data into a binary string using
         the appropriate algorithm specified by the mode.
         """
-        if self.mode == tables.modes['alphanumeric']:
+        if self.mode_num == tables.modes['alphanumeric']:
             encoded = self.encode_alphanumeric()
-        elif self.mode == tables.modes['numeric']:
+        elif self.mode_num == tables.modes['numeric']:
             encoded = self.encode_numeric()
-        elif self.mode == tables.modes['binary']:
+        elif self.mode_num == tables.modes['binary']:
             encoded = self.encode_bytes()
-        elif self.mode == tables.modes['kanji']:
+        elif self.mode_num == tables.modes['kanji']:
             encoded = self.encode_kanji()
         return encoded
 
@@ -253,7 +431,7 @@ class QRCodeBuilder:
         into account the interleaving pattern required by the standard.
         """
         # Encode the data into a QR code
-        self.buffer.write(QRCodeBuilder.binary_string(self.mode, 4))
+        self.buffer.write(QRCodeBuilder.binary_string(self.mode_num, 4))
         self.buffer.write(self.get_data_length())
         self.buffer.write(self.encode())
         # Converts the buffer into "code word" integers.
@@ -426,12 +604,11 @@ class QRCodeBuilder:
 
     def make_code(self):
         """This method returns the best possible QR code."""
-        from copy import deepcopy
         # Get the size of the underlying matrix
         matrix_size = _get_symbol_size(self.version, scale=1, quiet_zone=0)[0]
         # Create a template matrix we will build the codes with
         row = [' ' for x in range(matrix_size)]
-        template = [deepcopy(row) for x in range(matrix_size)]
+        template = [list(row) for x in range(matrix_size)]
         # Add mandatory information to the template
         QRCodeBuilder.add_detection_pattern(template)
         self.add_position_pattern(template)
@@ -565,12 +742,10 @@ class QRCodeBuilder:
         be determined. The template parameter is a code matrix that will
         server as the base for all the generated masks.
         """
-        from copy import deepcopy
-
         nmasks = len(tables.mask_patterns)
         masks = [''] * nmasks
         for n in range(nmasks):
-            cur_mask = deepcopy(template)
+            cur_mask = [list(row) for row in template]
             masks[n] = cur_mask
             # Add the type pattern bits to the code
             QRCodeBuilder.add_type_pattern(cur_mask, tables.type_bits[self.error][n])
@@ -579,15 +754,15 @@ class QRCodeBuilder:
             # This will read the 1's and 0's one at a time
             bits = iter(self.buffer.getvalue())
             # These will help us do the up, down, up, down pattern
-            row_start = itertools.cycle([len(cur_mask)-1, 0])
-            row_stop = itertools.cycle([-1,len(cur_mask)])
+            row_start = itertools.cycle([len(cur_mask) - 1, 0])
+            row_stop = itertools.cycle([-1, len(cur_mask)])
             direction = itertools.cycle([-1, 1])
             # The data pattern is added using pairs of columns
-            for column in range(len(cur_mask)-1, 0, -2):
+            for column in range(len(cur_mask) - 1, 0, -2):
                 # The vertical timing pattern is an exception to the rules,
                 # move the column counter over by one
                 if column <= 6:
-                    column = column - 1
+                    column -= 1
                 # This will let us fill in the pattern
                 # right-left, right-left, etc.
                 column_pair = itertools.cycle([column, column-1])
@@ -621,20 +796,18 @@ class QRCodeBuilder:
         by the standard. The mask with the lowest total score should be the
         easiest to read by optical scanners.
         """
-        self.scores = []
-        for n in range(len(self.masks)):
-            self.scores.append([0,0,0,0])
+        self.scores = [[0, 0, 0, 0] for n in range(len(self.masks))]
         # Score penalty rule number 1
         # Look for five consecutive squares with the same color.
         # Each one found gets a penalty of 3 + 1 for every
         # same color square after the first five in the row.
-        for (n, mask) in enumerate(self.masks):
+        for n, mask in enumerate(self.masks):
             current = mask[0][0]
             total = 0
             # Examine the mask row wise
-            for row in range(0,len(mask)):
+            for row in range(0, len(mask)):
                 counter = 0
-                for col  in range(0,len(mask)):
+                for col  in range(0, len(mask)):
                     bit = mask[row][col]
                     if bit == current:
                         counter += 1
@@ -646,9 +819,9 @@ class QRCodeBuilder:
                 if counter >= 5:
                     total += (counter - 5) + 3
             # Examine the mask column wise
-            for col in range(0,len(mask)):
+            for col in range(0, len(mask)):
                 counter = 0
-                for row in range(0,len(mask)):
+                for row in range(0, len(mask)):
                     bit = mask[row][col]
                     if bit == current:
                         counter += 1
@@ -664,7 +837,7 @@ class QRCodeBuilder:
         # Score penalty rule 2
         # This rule will add 3 to the score for each 2x2 block of the same
         # colored pixels there are.
-        for (n, mask) in enumerate(self.masks):
+        for n, mask in enumerate(self.masks):
             count = 0
             # Don't examine the 0th and Nth row/column
             for i in range(0, len(mask)-1):
@@ -681,7 +854,7 @@ class QRCodeBuilder:
         patterns = [[0,0,0,0,1,0,1,1,1,0,1],
                     [1,0,1,1,1,0,1,0,0,0,0],]
                     #[0,0,0,0,1,0,1,1,1,0,1,0,0,0,0]]
-        for (n, mask) in enumerate(self.masks):
+        for n, mask in enumerate(self.masks):
             nmatches = 0
             for i in range(len(mask)):
                 for j in range(len(mask)):
@@ -710,11 +883,11 @@ class QRCodeBuilder:
         # Score the last rule, penalty rule 4. This rule measures how close
         # the pattern is to being 50% black. The further it deviates from
         # this this ideal the higher the penalty.
-        for (n, mask) in enumerate(self.masks):
+        for n, mask in enumerate(self.masks):
             nblack = 0
             for row in mask:
                 nblack += sum(row)
-            total_pixels = len(mask)**2
+            total_pixels = len(mask) ** 2
             ratio = nblack / total_pixels
             percent = (ratio * 100) - 50
             self.scores[n][3] = int((abs(int(percent)) / 5) * 10)
@@ -990,19 +1163,27 @@ def _png(code, version, file, scale=1, module_color=(0, 0, 0, 255),
             (default: ``4``). Set to zero (``0``) if the code shouldn't
             have a border.
     """
-    import png
-
+    if not _PYPNG_AVAILABLE:
+        raise ValueError('PNG support needs PyPNG. Please install via pip --install pypng')
     # Coerce scale parameter into an integer
     try:
         scale = int(scale)
     except ValueError:
         raise ValueError('The scale parameter must be an integer')
 
-    def invert_row_bits(row):
+    def png_bits(row):
         """\
-        Inverts the row bits 0 -> 1, 1 -> 0
+        Inverts the row bits 0 -> 1, 1 -> 0 and scales the bits along the x-axis
         """
-        return (b ^ 0x1 for b in row)
+        for b in row:
+            bit = b ^ 1
+            for s in scale_range:
+                yield bit
+
+    def png_row(row):
+        row = tuple(row)
+        for i in scale_range:
+            yield row
 
     def png_pallete_color(color):
         """This creates a palette color from a list or tuple. The list or
@@ -1034,7 +1215,7 @@ def _png(code, version, file, scale=1, module_color=(0, 0, 0, 255),
     if module_color is None:
         raise ValueError('The module_color must not be None')
 
-    bitdepth = 1
+    scale_range = range(scale)
     # foreground aka module color
     fg_col = png_pallete_color(module_color)
     transparent = background is None
@@ -1044,17 +1225,17 @@ def _png(code, version, file, scale=1, module_color=(0, 0, 0, 255),
     # Assume greyscale if module color is black and background color is white
     greyscale = fg_col[:3] == (0, 0, 0) and (transparent or bg_col == (255, 255, 255, 255))
     transparent_color = 1 if transparent and greyscale else None
-    palette = [fg_col, bg_col] if not greyscale else None
+    palette = (fg_col, bg_col) if not greyscale else None
     # The size of the PNG
     width, height = _get_symbol_size(version, scale, quiet_zone)
     # Write out the PNG
+    w = png.Writer(width=width, height=height, greyscale=greyscale,
+                   transparent=transparent_color, palette=palette,
+                   bitdepth=1)
     with _writable(file, 'wb') as f:
-        w = png.Writer(width=width, height=height, greyscale=greyscale,
-                       transparent=transparent_color, palette=palette,
-                       bitdepth=bitdepth)
-        w.write_passes(f, (invert_row_bits(row) for row in _matrix_iter(code, version,
-                                                                        scale=scale,
-                                                                        quiet_zone=quiet_zone)))
+        w.write_passes(f, chain.from_iterable(map(png_row, (map(png_bits, _matrix_iter(code, version,
+                                                            scale=1,
+                                                            quiet_zone=quiet_zone))))))
 
 
 def _eps(code, version, file_or_path, scale=1, module_color=(0, 0, 0),
@@ -1203,13 +1384,14 @@ def _matrix_iter(code, version, scale=1, quiet_zone=4):
     :param int quiet_zone: The border size.
     """
     width, height = _get_symbol_size(version, scale=1, quiet_zone=0)  # scale=1, quiet_zone=0 is used by intention!
-
-    def get_bit(i, j):
-        return 0x1 if (0 <= i < height and 0 <= j < width and code[i][j]) else 0x0
-
-    for i in range(-quiet_zone, height + quiet_zone):
-        for s in range(scale):
-            yield chain.from_iterable(([get_bit(i, j)] * scale for j in range(-quiet_zone, width + quiet_zone)))
+    border_row = [0] * width
+    rng = range(-quiet_zone, height + quiet_zone)
+    scale_range = range(scale)
+    for i in rng:
+        row = code[i] if 0 <= i < height else border_row
+        scaled_row = tuple(chain.from_iterable([[1 if 0 <= j < width and row[j] else 0] * scale for j in rng]))
+        for s in scale_range:
+            yield scaled_row
 
 
 def _terminal(code, version, out, quiet_zone=None):

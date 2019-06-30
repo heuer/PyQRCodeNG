@@ -35,7 +35,7 @@ except NameError:
 # <https://wiki.python.org/moin/PortingToPy3k/BilingualQuickRef#New_Style_Classes>
 __metaclass__ = type
 
-__version__ = '1.3.2'
+__version__ = '1.3.3'
 
 
 def create(content, error='H', version=None, mode=None, encoding=None):
@@ -93,7 +93,7 @@ def create(content, error='H', version=None, mode=None, encoding=None):
     The *encoding* parameter specifies how the content will be interpreted.
     This parameter only matters if the *content* is a string, unicode, or
     byte array type. This parameter must be a valid encoding string or None. 
-    t will be passed the *content*'s encode/decode methods.
+    It will be passed the *content*'s encode/decode methods.
     """
     return QRCode(content, error, version, mode, encoding)
 
@@ -115,110 +115,22 @@ class QRCode:
         >>> number.png('big-number.png')
 
     .. note::
-        For what all of the parameters do, see the :func:`pyqrcode.create`
+        For what all of the parameters do, see the :func:`pyqrcodeng.create`
         function.
     """
     def __init__(self, content, error='H', version=None, mode=None,
                  encoding=None):
-        # Guess the mode of the code, this will also be used for
-        # error checking
-        guessed_content_type, encoding = QRCode._detect_content_type(content, encoding)
-
-        encoding_provided = encoding is not None
-        if encoding is None:
-            encoding = 'iso-8859-1'
-
-        # Store the encoding for use later
-        if guessed_content_type == 'kanji':
-            self.encoding = 'shiftjis'
-        else:
-            self.encoding = encoding
-        
-        if version is not None:
-            if 1 <= version <= 40:
-                self.version = version
-            else:
-                raise ValueError("Illegal version {0}, version must be between "
-                                 "1 and 40.".format(version))
-
-        # Decode a 'byte array' contents into a string format
-        if isinstance(content, bytes):
-            self.data = content.decode(encoding)
-        # Give a string an encoding
-        elif hasattr(content, 'encode'):
-            try:
-                self.data = content.encode(self.encoding)
-            except UnicodeEncodeError as ex:
-                if not encoding_provided:
-                    self.encoding = 'utf-8'
-                    self.data = content.encode(self.encoding)
-                else:
-                    raise ex
-        else:
-            # The contents are not a byte array or string, so
-            # try naively converting to a string representation.
-            self.data = str(content)  # str == unicode in Py 2.x, see file head
-
-        # Force a passed in mode to be lowercase
-        if hasattr(mode, 'lower'):
-            mode = mode.lower()
-
-        # Check that the mode parameter is compatible with the contents
-        if mode is None:
-            # Use the guessed mode
-            self.mode = guessed_content_type
-            self.mode_num = tables.modes[self.mode]
-        elif mode not in tables.modes.keys():
-            # Unknown mode
-            raise ValueError('{0} is not a valid mode.'.format(mode))
-        elif guessed_content_type == 'binary' and \
-             tables.modes[mode] != tables.modes['binary']:
-            # Binary is only guessed as a last resort, if the
-            # passed in mode is not binary the data won't encode
-            raise ValueError('The content provided cannot be encoded with '
-                             'the mode {}, it can only be encoded as '
-                             'binary.'.format(mode))
-        elif tables.modes[mode] == tables.modes['numeric'] and \
-             guessed_content_type != 'numeric':
-            # If numeric encoding is requested make sure the data can
-            # be encoded in that format
-            raise ValueError('The content cannot be encoded as numeric.')
-        elif tables.modes[mode] == tables.modes['kanji'] and \
-             guessed_content_type != 'kanji':
-            raise ValueError('The content cannot be encoded as kanji.')
-        else:
-            # The data should encode with the passed in mode
-            self.mode = mode
-            self.mode_num = tables.modes[self.mode]
-
-        # Check that the user passed in a valid error level
-        if error in tables.error_level.keys():
-            self.error = tables.error_level[error]
-        else:
-            raise ValueError('{0} is not a valid error '
-                             'level.'.format(error))
-
-        # Guess the "best" version
-        self.version = self._pick_best_fit(self.data)
-
-        # If the user supplied a version, then check that it has
-        # sufficient data capacity for the contents passed in
-        if version:
-            if version >= self.version:
-                self.version = version
-            else:
-                raise ValueError('The data will not fit inside a version {} '
-                                 'code with the given encoding and error '
-                                 'level (the code must be at least a '
-                                 'version {}).'.format(version, self.version))
-
         # Build the QR code
-        self.builder = builder.QRCodeBuilder(data=self.data,
-                                             version=self.version,
-                                             mode=self.mode,
-                                             error=self.error)
-        # Save the code for easier reference
+        self.builder = builder.QRCodeBuilder(content=content, version=version,
+                                             mode=mode, error=error,
+                                             encoding=encoding)
         self.code = self.builder.code
+        self.data = self.builder.data
+        self.encoding = self.builder.encoding
+        self.version = self.builder.version
+        self.mode = self.builder.mode
+        self.mode_num = self.builder.mode_num
+        self.error = self.builder.error
 
     def __str__(self):
         return repr(self)
@@ -229,120 +141,6 @@ class QRCode:
     def __repr__(self):
         return "QRCode(content={0}, error='{1}', version={2}, mode='{3}')" \
                 .format(repr(self.data), self.error, self.version, self.mode)
-
-    @staticmethod
-    def _detect_content_type(content, encoding):
-        """This method tries to auto-detect the type of the data. It first
-        tries to see if the data is a valid integer, in which case it returns
-        numeric. Next, it tests the data to see if it is 'alphanumeric.' QR
-        Codes use a special table with very limited range of ASCII characters.
-        The code's data is tested to make sure it fits inside this limited
-        range. If all else fails, the data is determined to be of type
-        'binary.'
-        
-        Returns a tuple containing the detected mode and encoding.
-
-        Note, encoding ECI is not yet implemented.
-        """
-        def two_bytes(c):
-            """Output two byte character code as a single integer."""
-            def next_byte(b):
-                """Make sure that character code is an int. Python 2 and
-                3 compatibility.
-                """
-                if not isinstance(b, int):
-                    return ord(b)
-                else:
-                    return b
-
-            # Go through the data by looping to every other character
-            for i in range(0, len(c), 2):
-                yield (next_byte(c[i]) << 8) | next_byte(c[i+1])
-
-        # See if the data is a number
-        try:
-            if str(content).isdigit():
-                return 'numeric', encoding
-        except (TypeError, UnicodeError):
-            pass
-
-        # See if that data is alphanumeric based on the standards
-        # special ASCII table
-        valid_characters = ''.join(tables.ascii_codes.keys())
-        
-        # Force the characters into a byte array
-        valid_characters = valid_characters.encode('ASCII')
-
-        try:
-            if isinstance(content, bytes):
-                c = content.decode('ASCII')
-            else:
-                c = str(content).encode('ASCII')
-
-            if all(map(lambda x: x in valid_characters, c)):
-                return 'alphanumeric', 'ASCII'
-
-        # This occurs if the content does not contain ASCII characters.
-        # Since the whole point of the if statement is to look for ASCII
-        # characters, the resulting mode should not be alphanumeric.
-        # Hence, this is not an error.
-        except TypeError:
-            pass
-        except UnicodeError:
-            pass
-
-        try:
-            if isinstance(content, bytes):
-                if encoding is None:
-                    encoding = 'shiftjis'
-                c = content.decode(encoding).encode('shiftjis')
-            else:
-                c = content.encode('shiftjis')
-            
-            # All kanji characters must be two bytes long, make sure the
-            # string length is not odd.
-            if len(c) % 2 != 0:
-                return 'binary', encoding
-
-            # Take sure the characters are actually in range.
-            for asint in two_bytes(c):
-                # Shift the two byte value as indicated by the standard
-                if not (0x8140 <= asint <= 0x9FFC or
-                        0xE040 <= asint <= 0xEBBF):
-                    return 'binary', encoding
-            return 'kanji', encoding
-        except UnicodeError:
-            # This occurs if the content does not contain Shift JIS kanji
-            # characters. Hence, the resulting mode should not be kanji.
-            # This is not an error.
-            pass
-        except LookupError:
-            # This occurs if the host Python does not support Shift JIS kanji
-            # encoding. Hence, the resulting mode should not be kanji.
-            # This is not an error.
-            pass
-        # All of the other attempts failed. The content can only be binary.
-        return 'binary', encoding
-
-    def _pick_best_fit(self, content):
-        """This method return the smallest possible QR code version number
-        that will fit the specified data with the given error level.
-        """
-        import math
-        
-        for version in range(1, 41):
-            # Get the maximum possible capacity
-            capacity = tables.data_capacity[version][self.error][self.mode_num]
-            
-            # Check the capacity
-            # Kanji's count in the table is "characters" which are two bytes
-            if (self.mode_num == tables.modes['kanji'] and
-                capacity >= math.ceil(len(content) / 2)):
-                return version
-            if capacity >= len(content):
-                return version
-        raise ValueError('The data will not fit in any QR code version '
-                         'with the given encoding and error level.')
 
     def show(self, wait=1.2, scale=10, module_color=(0, 0, 0, 255),
             background=(255, 255, 255, 255), quiet_zone=4):  # pragma: no cover
@@ -447,7 +245,7 @@ class QRCode:
         code too small to be read efficiently. Increasing the scale will make
         the code larger. Only integer scales are usable. This method will
         attempt to coerce the parameter into an integer (e.g. 2.5 will become 2,
-        and '3' will become 3). You can use the :py:meth:`get_png_size` method
+        and '3' will become 3). You can use the :py:meth:`symbol_size` method
         to calculate the actual pixel size of the resulting PNG image.
 
         The *module_color* parameter sets what color to use for the encoded
@@ -546,7 +344,7 @@ class QRCode:
         code too small to be read efficiently. Increasing the scale will make
         the code larger. Only integer scales are usable. This method will
         attempt to coerce the parameter into an integer (e.g. 2.5 will become 2,
-        and '3' will become 3). You can use the :py:meth:`get_png_size` method
+        and '3' will become 3). You can use the :py:meth:`symbol_size` method
         to calculate the actual pixel size of this image when displayed.
 
         The *quiet_zone* parameter sets how wide the quiet zone around the code

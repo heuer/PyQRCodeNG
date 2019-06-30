@@ -28,6 +28,12 @@ except ImportError:  # pragma: no cover
     range = xrange
     str = unicode
     open = io.open
+_PYPNG_AVAILABLE = False
+try:
+    import png
+    _PYPNG_AVAILABLE = True
+except ImportError:
+    pass
 
 # <https://wiki.python.org/moin/PortingToPy3k/BilingualQuickRef#New_Style_Classes>
 __metaclass__ = type
@@ -1157,8 +1163,8 @@ def _png(code, version, file, scale=1, module_color=(0, 0, 0, 255),
             (default: ``4``). Set to zero (``0``) if the code shouldn't
             have a border.
     """
-    import png
-
+    if not _PYPNG_AVAILABLE:
+        raise ValueError('PNG support needs PyPNG. Please install via pip --install pypng')
     # Coerce scale parameter into an integer
     try:
         scale = int(scale)

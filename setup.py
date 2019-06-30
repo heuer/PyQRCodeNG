@@ -52,7 +52,7 @@ setup(
     description='Fork of PyQRCode - A QR code generator written purely in Python with SVG, EPS, PNG and terminal output.',
     author='Michael Nooner, Lars Heuer',
     author_email='heuer@semagia.com',
-    url='https://github.com/heuer/pyqrcodeng',
+    url='https://github.com/pyqrcode/pyqrcodeNG',
     keywords=['qrcode', 'qr'],
     license='BSD',
     extras_require={

@@ -23,7 +23,7 @@ try:  # pragma: no cover
     from itertools import zip_longest
 except ImportError:  # pragma: no cover
     # Py2
-    from itertools import izip_longest as zip_longest
+    from itertools import izip_longest as zip_longest, imap as map
     range = xrange
     str = unicode
     open = io.open
@@ -426,12 +426,11 @@ class QRCodeBuilder:
 
     def make_code(self):
         """This method returns the best possible QR code."""
-        from copy import deepcopy
         # Get the size of the underlying matrix
         matrix_size = _get_symbol_size(self.version, scale=1, quiet_zone=0)[0]
         # Create a template matrix we will build the codes with
         row = [' ' for x in range(matrix_size)]
-        template = [deepcopy(row) for x in range(matrix_size)]
+        template = [list(row) for x in range(matrix_size)]
         # Add mandatory information to the template
         QRCodeBuilder.add_detection_pattern(template)
         self.add_position_pattern(template)
@@ -565,12 +564,10 @@ class QRCodeBuilder:
         be determined. The template parameter is a code matrix that will
         server as the base for all the generated masks.
         """
-        from copy import deepcopy
-
         nmasks = len(tables.mask_patterns)
         masks = [''] * nmasks
         for n in range(nmasks):
-            cur_mask = deepcopy(template)
+            cur_mask = [list(row) for row in template]
             masks[n] = cur_mask
             # Add the type pattern bits to the code
             QRCodeBuilder.add_type_pattern(cur_mask, tables.type_bits[self.error][n])
@@ -579,15 +576,15 @@ class QRCodeBuilder:
             # This will read the 1's and 0's one at a time
             bits = iter(self.buffer.getvalue())
             # These will help us do the up, down, up, down pattern
-            row_start = itertools.cycle([len(cur_mask)-1, 0])
-            row_stop = itertools.cycle([-1,len(cur_mask)])
+            row_start = itertools.cycle([len(cur_mask) - 1, 0])
+            row_stop = itertools.cycle([-1, len(cur_mask)])
             direction = itertools.cycle([-1, 1])
             # The data pattern is added using pairs of columns
-            for column in range(len(cur_mask)-1, 0, -2):
+            for column in range(len(cur_mask) - 1, 0, -2):
                 # The vertical timing pattern is an exception to the rules,
                 # move the column counter over by one
                 if column <= 6:
-                    column = column - 1
+                    column -= 1
                 # This will let us fill in the pattern
                 # right-left, right-left, etc.
                 column_pair = itertools.cycle([column, column-1])
@@ -621,20 +618,18 @@ class QRCodeBuilder:
         by the standard. The mask with the lowest total score should be the
         easiest to read by optical scanners.
         """
-        self.scores = []
-        for n in range(len(self.masks)):
-            self.scores.append([0,0,0,0])
+        self.scores = [[0, 0, 0, 0] for n in range(len(self.masks))]
         # Score penalty rule number 1
         # Look for five consecutive squares with the same color.
         # Each one found gets a penalty of 3 + 1 for every
         # same color square after the first five in the row.
-        for (n, mask) in enumerate(self.masks):
+        for n, mask in enumerate(self.masks):
             current = mask[0][0]
             total = 0
             # Examine the mask row wise
-            for row in range(0,len(mask)):
+            for row in range(0, len(mask)):
                 counter = 0
-                for col  in range(0,len(mask)):
+                for col  in range(0, len(mask)):
                     bit = mask[row][col]
                     if bit == current:
                         counter += 1
@@ -646,9 +641,9 @@ class QRCodeBuilder:
                 if counter >= 5:
                     total += (counter - 5) + 3
             # Examine the mask column wise
-            for col in range(0,len(mask)):
+            for col in range(0, len(mask)):
                 counter = 0
-                for row in range(0,len(mask)):
+                for row in range(0, len(mask)):
                     bit = mask[row][col]
                     if bit == current:
                         counter += 1
@@ -664,7 +659,7 @@ class QRCodeBuilder:
         # Score penalty rule 2
         # This rule will add 3 to the score for each 2x2 block of the same
         # colored pixels there are.
-        for (n, mask) in enumerate(self.masks):
+        for n, mask in enumerate(self.masks):
             count = 0
             # Don't examine the 0th and Nth row/column
             for i in range(0, len(mask)-1):
@@ -681,7 +676,7 @@ class QRCodeBuilder:
         patterns = [[0,0,0,0,1,0,1,1,1,0,1],
                     [1,0,1,1,1,0,1,0,0,0,0],]
                     #[0,0,0,0,1,0,1,1,1,0,1,0,0,0,0]]
-        for (n, mask) in enumerate(self.masks):
+        for n, mask in enumerate(self.masks):
             nmatches = 0
             for i in range(len(mask)):
                 for j in range(len(mask)):
@@ -710,11 +705,11 @@ class QRCodeBuilder:
         # Score the last rule, penalty rule 4. This rule measures how close
         # the pattern is to being 50% black. The further it deviates from
         # this this ideal the higher the penalty.
-        for (n, mask) in enumerate(self.masks):
+        for n, mask in enumerate(self.masks):
             nblack = 0
             for row in mask:
                 nblack += sum(row)
-            total_pixels = len(mask)**2
+            total_pixels = len(mask) ** 2
             ratio = nblack / total_pixels
             percent = (ratio * 100) - 50
             self.scores[n][3] = int((abs(int(percent)) / 5) * 10)
@@ -998,11 +993,19 @@ def _png(code, version, file, scale=1, module_color=(0, 0, 0, 255),
     except ValueError:
         raise ValueError('The scale parameter must be an integer')
 
-    def invert_row_bits(row):
+    def png_bits(row):
         """\
-        Inverts the row bits 0 -> 1, 1 -> 0
+        Inverts the row bits 0 -> 1, 1 -> 0 and scales the bits along the x-axis
         """
-        return (b ^ 0x1 for b in row)
+        for b in row:
+            bit = b ^ 1
+            for s in scale_range:
+                yield bit
+
+    def png_row(row):
+        row = tuple(row)
+        for i in scale_range:
+            yield row
 
     def png_pallete_color(color):
         """This creates a palette color from a list or tuple. The list or
@@ -1034,7 +1037,7 @@ def _png(code, version, file, scale=1, module_color=(0, 0, 0, 255),
     if module_color is None:
         raise ValueError('The module_color must not be None')
 
-    bitdepth = 1
+    scale_range = range(scale)
     # foreground aka module color
     fg_col = png_pallete_color(module_color)
     transparent = background is None
@@ -1044,17 +1047,17 @@ def _png(code, version, file, scale=1, module_color=(0, 0, 0, 255),
     # Assume greyscale if module color is black and background color is white
     greyscale = fg_col[:3] == (0, 0, 0) and (transparent or bg_col == (255, 255, 255, 255))
     transparent_color = 1 if transparent and greyscale else None
-    palette = [fg_col, bg_col] if not greyscale else None
+    palette = (fg_col, bg_col) if not greyscale else None
     # The size of the PNG
     width, height = _get_symbol_size(version, scale, quiet_zone)
     # Write out the PNG
+    w = png.Writer(width=width, height=height, greyscale=greyscale,
+                   transparent=transparent_color, palette=palette,
+                   bitdepth=1)
     with _writable(file, 'wb') as f:
-        w = png.Writer(width=width, height=height, greyscale=greyscale,
-                       transparent=transparent_color, palette=palette,
-                       bitdepth=bitdepth)
-        w.write_passes(f, (invert_row_bits(row) for row in _matrix_iter(code, version,
-                                                                        scale=scale,
-                                                                        quiet_zone=quiet_zone)))
+        w.write_passes(f, chain.from_iterable(map(png_row, (map(png_bits, _matrix_iter(code, version,
+                                                            scale=1,
+                                                            quiet_zone=quiet_zone))))))
 
 
 def _eps(code, version, file_or_path, scale=1, module_color=(0, 0, 0),
@@ -1203,13 +1206,14 @@ def _matrix_iter(code, version, scale=1, quiet_zone=4):
     :param int quiet_zone: The border size.
     """
     width, height = _get_symbol_size(version, scale=1, quiet_zone=0)  # scale=1, quiet_zone=0 is used by intention!
-
-    def get_bit(i, j):
-        return 0x1 if (0 <= i < height and 0 <= j < width and code[i][j]) else 0x0
-
-    for i in range(-quiet_zone, height + quiet_zone):
-        for s in range(scale):
-            yield chain.from_iterable(([get_bit(i, j)] * scale for j in range(-quiet_zone, width + quiet_zone)))
+    border_row = [0] * width
+    rng = range(-quiet_zone, height + quiet_zone)
+    scale_range = range(scale)
+    for i in rng:
+        row = code[i] if 0 <= i < height else border_row
+        scaled_row = tuple(chain.from_iterable([[1 if 0 <= j < width and row[j] else 0] * scale for j in rng]))
+        for s in scale_range:
+            yield scaled_row
 
 
 def _terminal(code, version, out, quiet_zone=None):

@@ -12,6 +12,7 @@ This module does not belong to the public API.
 """
 from __future__ import absolute_import, division, print_function, unicode_literals
 import io
+import math
 import codecs
 import itertools
 from itertools import chain
@@ -55,30 +56,90 @@ class QRCodeBuilder:
     QR code Debugger:
         http://qrlogo.kaarposoft.dk/qrdecode.html
     """
-    def __init__(self, data, version, mode, error):
+    def __init__(self, content, version, mode, error, encoding=None):
         """See :py:class:`pyqrcode.QRCode` for information on the parameters."""
-        # Set what data we are going to use to generate
-        # the QR code
-        self.data = data
 
-        # Check that the user passed in a valid mode
-        if mode in tables.modes:
-            self.mode = tables.modes[mode]
+        # Guess the mode of the code, this will also be used for
+        # error checking
+        guessed_content_type, encoding = QRCodeBuilder._detect_content_type(content, encoding)
+
+        encoding_provided = encoding is not None
+        if encoding is None:
+            encoding = 'iso-8859-1'
+
+        # Store the encoding for use later
+        if guessed_content_type == 'kanji':
+            self.encoding = 'shiftjis'
         else:
-            raise ValueError('{0} is not a valid mode.'.format(mode))
+            self.encoding = encoding
 
+        if version is not None:
+            if 1 <= version <= 40:
+                self.version = version
+            else:
+                raise ValueError("Illegal version {0}, version must be between "
+                                 "1 and 40.".format(version))
+
+
+        # Decode a 'byte array' contents into a string format
+        if isinstance(content, bytes):
+            self.data = content.decode(encoding)
+        # Give a string an encoding
+        elif hasattr(content, 'encode'):
+            try:
+                self.data = content.encode(self.encoding)
+            except UnicodeEncodeError as ex:
+                if not encoding_provided:
+                    self.encoding = 'utf-8'
+                    self.data = content.encode(self.encoding)
+                else:
+                    raise ex
+        else:
+            # The contents are not a byte array or string, so
+            # try naively converting to a string representation.
+            self.data = str(content)  # str == unicode in Py 2.x, see file head
+
+        if mode is None:
+            # Use the guessed mode
+            mode = guessed_content_type
+        else:
+            # Force a passed in mode to be lowercase
+            mode = mode.lower()
+            try:
+                self.mode_num = tables.modes[mode]
+            except KeyError:
+                raise ValueError('{0} is not a valid mode.'.format(mode))
+            if guessed_content_type != mode:
+                # Binary is only guessed as a last resort, if the
+                # passed in mode is not binary the data won't encode
+                if guessed_content_type == 'binary':
+                    raise ValueError('The content provided cannot be encoded with '
+                                     'the mode {}, it can only be encoded as '
+                                     'binary.'.format(mode))
+                elif mode in ('numeric', 'kanji'):
+                    raise ValueError('The content cannot be encoded as {0}. Proposal: "{1}".'.format(mode, guessed_content_type))
+        self.mode = mode
+        self.mode_num = tables.modes[mode]
         # Check that the user passed in a valid error level
-        if error in tables.error_level:
+        try:
             self.error = tables.error_level[error]
-        else:
-            raise ValueError('{0} is not a valid error '
-                             'level.'.format(error))
+        except KeyError:
+            raise ValueError('{0} is not a valid error level.'.format(error))
 
-        if 1 <= version <= 40:
+        # Guess the "best" version
+        guessed_version = self._pick_best_fit(self.data)
+        if version is None:
+            version = guessed_version
             self.version = version
-        else:
-            raise ValueError("Illegal version {0}, version must be between "
-                             "1 and 40.".format(version))
+
+        # If the user supplied a version, then check that it has
+        # sufficient data capacity for the contents passed in
+        if guessed_version > version:
+            raise ValueError('The data will not fit inside a version {} '
+                             'code with the given encoding and error '
+                             'level (the code must be at least a '
+                             'version {}).'.format(version, guessed_version))
+
         # Look up the proper row for error correction code words
         self.error_code_words = tables.eccwbi[version][self.error]
         # This property will hold the binary string as it is built
@@ -87,6 +148,116 @@ class QRCodeBuilder:
         self.add_data()
         # Create the actual QR code
         self.make_code()
+
+    @staticmethod
+    def _detect_content_type(content, encoding):
+        """This method tries to auto-detect the type of the data. It first
+        tries to see if the data is a valid integer, in which case it returns
+        numeric. Next, it tests the data to see if it is 'alphanumeric.' QR
+        Codes use a special table with very limited range of ASCII characters.
+        The code's data is tested to make sure it fits inside this limited
+        range. If all else fails, the data is determined to be of type
+        'binary.'
+
+        Returns a tuple containing the detected mode and encoding.
+
+        Note, encoding ECI is not yet implemented.
+        """
+        def two_bytes(c):
+            """Output two byte character code as a single integer."""
+            def next_byte(b):
+                """Make sure that character code is an int. Python 2 and
+                3 compatibility.
+                """
+                if not isinstance(b, int):
+                    return ord(b)
+                else:
+                    return b
+
+            # Go through the data by looping to every other character
+            for i in range(0, len(c), 2):
+                yield (next_byte(c[i]) << 8) | next_byte(c[i+1])
+
+        # See if the data is a number
+        try:
+            if str(content).isdigit():
+                return 'numeric', encoding
+        except (TypeError, UnicodeError):
+            pass
+
+        # See if that data is alphanumeric based on the standards
+        # special ASCII table
+        valid_characters = ''.join(tables.ascii_codes.keys())
+
+        # Force the characters into a byte array
+        valid_characters = valid_characters.encode('ASCII')
+
+        try:
+            if isinstance(content, bytes):
+                c = content.decode('ASCII')
+            else:
+                c = str(content).encode('ASCII')
+            if all(map(lambda x: x in valid_characters, c)):
+                return 'alphanumeric', 'ASCII'
+        # This occurs if the content does not contain ASCII characters.
+        # Since the whole point of the if statement is to look for ASCII
+        # characters, the resulting mode should not be alphanumeric.
+        # Hence, this is not an error.
+        except TypeError:
+            pass
+        except UnicodeError:
+            pass
+
+        try:
+            if isinstance(content, bytes):
+                if encoding is None:
+                    encoding = 'shiftjis'
+                c = content.decode(encoding).encode('shiftjis')
+            else:
+                c = content.encode('shiftjis')
+
+            # All kanji characters must be two bytes long, make sure the
+            # string length is not odd.
+            if len(c) % 2 != 0:
+                return 'binary', encoding
+
+            # Take sure the characters are actually in range.
+            for asint in two_bytes(c):
+                # Shift the two byte value as indicated by the standard
+                if not (0x8140 <= asint <= 0x9FFC or
+                        0xE040 <= asint <= 0xEBBF):
+                    return 'binary', encoding
+            return 'kanji', encoding
+        except UnicodeError:
+            # This occurs if the content does not contain Shift JIS kanji
+            # characters. Hence, the resulting mode should not be kanji.
+            # This is not an error.
+            pass
+        except LookupError:
+            # This occurs if the host Python does not support Shift JIS kanji
+            # encoding. Hence, the resulting mode should not be kanji.
+            # This is not an error.
+            pass
+        # All of the other attempts failed. The content can only be binary.
+        return 'binary', encoding
+
+    def _pick_best_fit(self, content):
+        """This method return the smallest possible QR code version number
+        that will fit the specified data with the given error level.
+        """
+        for version in range(1, 41):
+            # Get the maximum possible capacity
+            capacity = tables.data_capacity[version][self.error][self.mode_num]
+            # Check the capacity
+            # Kanji's count in the table is "characters" which are two bytes
+            if (self.mode_num == tables.modes['kanji'] and
+                capacity >= math.ceil(len(content) / 2)):
+                return version
+            if capacity >= len(content):
+                return version
+        raise ValueError('The data will not fit in any QR code version '
+                         'with the given encoding and error level.')
+
 
     @staticmethod
     def grouper(n, iterable, fillvalue=None):
@@ -122,8 +293,8 @@ class QRCodeBuilder:
             max_version = 26
         elif 27 <= self.version <= 40:
             max_version = 40
-        data_length = tables.data_length_field[max_version][self.mode]
-        if self.mode != tables.modes['kanji']:
+        data_length = tables.data_length_field[max_version][self.mode_num]
+        if self.mode_num != tables.modes['kanji']:
             length_string = QRCodeBuilder.binary_string(len(self.data), data_length)
         else:
             length_string = QRCodeBuilder.binary_string(len(self.data) / 2, data_length)
@@ -136,13 +307,13 @@ class QRCodeBuilder:
         """This method encodes the data into a binary string using
         the appropriate algorithm specified by the mode.
         """
-        if self.mode == tables.modes['alphanumeric']:
+        if self.mode_num == tables.modes['alphanumeric']:
             encoded = self.encode_alphanumeric()
-        elif self.mode == tables.modes['numeric']:
+        elif self.mode_num == tables.modes['numeric']:
             encoded = self.encode_numeric()
-        elif self.mode == tables.modes['binary']:
+        elif self.mode_num == tables.modes['binary']:
             encoded = self.encode_bytes()
-        elif self.mode == tables.modes['kanji']:
+        elif self.mode_num == tables.modes['kanji']:
             encoded = self.encode_kanji()
         return encoded
 
@@ -253,7 +424,7 @@ class QRCodeBuilder:
         into account the interleaving pattern required by the standard.
         """
         # Encode the data into a QR code
-        self.buffer.write(QRCodeBuilder.binary_string(self.mode, 4))
+        self.buffer.write(QRCodeBuilder.binary_string(self.mode_num, 4))
         self.buffer.write(self.get_data_length())
         self.buffer.write(self.encode())
         # Converts the buffer into "code word" integers.

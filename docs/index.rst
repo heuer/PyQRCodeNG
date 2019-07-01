@@ -85,7 +85,7 @@ Developer Documentation
    :maxdepth: 1
 
    moddoc
-   tables
+   qrspecial
 
 
 Indices and tables

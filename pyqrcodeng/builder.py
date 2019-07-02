@@ -607,19 +607,19 @@ class QRCodeBuilder:
         # Get the size of the underlying matrix
         matrix_size = _get_symbol_size(self.version, scale=1, quiet_zone=0)[0]
         # Create a template matrix we will build the codes with
-        row = [' ' for x in range(matrix_size)]
-        template = [list(row) for x in range(matrix_size)]
-        # Add mandatory information to the template
-        QRCodeBuilder.add_detection_pattern(template)
-        self.add_position_pattern(template)
-        self.add_version_pattern(template)
-        # Create the various types of masks of the template
-        self.masks = self.make_masks(template)
-        self.best_mask = self.choose_best_mask()
-        self.code = self.masks[self.best_mask]
+        row = [None for x in range(matrix_size)]
+        matrix = [list(row) for x in range(matrix_size)]
+        # Add mandatory information to the matrix
+        QRCodeBuilder.add_detection_pattern(matrix)
+        QRCodeBuilder.add_position_pattern(matrix, self.version)
+        QRCodeBuilder.add_version_pattern(matrix, self.version)
+        # Create the various types of masks of the matrix
+        masks = QRCodeBuilder.make_masks(matrix, self.buffer.getvalue(), self.error)
+        best_mask = QRCodeBuilder.choose_best_mask(masks)
+        self.code = masks[best_mask]
 
     @staticmethod
-    def add_detection_pattern(m):
+    def add_detection_pattern(matrix):
         """This method add the detection patterns to the QR code. This lets
         the scanner orient the pattern. It is required for all QR codes.
         The detection pattern consists of three boxes located at the upper
@@ -629,130 +629,131 @@ class QRCodeBuilder:
         """
         # Draw outer black box
         for i in range(7):
-            inv = -(i+1)
-            for j in [0,6,-1,-7]:
-                m[j][i] = 1
-                m[i][j] = 1
-                m[inv][j] = 1
-                m[j][inv] = 1
+            inv = -(i + 1)
+            for j in (0, 6, -1, -7):
+                matrix[j][i] = 1
+                matrix[i][j] = 1
+                matrix[inv][j] = 1
+                matrix[j][inv] = 1
         # Draw inner white box
         for i in range(1, 6):
-            inv = -(i+1)
-            for j in [1, 5, -2, -6]:
-                m[j][i] = 0
-                m[i][j] = 0
-                m[inv][j] = 0
-                m[j][inv] = 0
+            inv = -(i + 1)
+            for j in (1, 5, -2, -6):
+                matrix[j][i] = 0
+                matrix[i][j] = 0
+                matrix[inv][j] = 0
+                matrix[j][inv] = 0
         # Draw inner black box
         for i in range(2, 5):
             for j in range(2, 5):
-                inv = -(i+1)
-                m[i][j] = 1
-                m[inv][j] = 1
-                m[j][inv] = 1
+                inv = -(i + 1)
+                matrix[i][j] = 1
+                matrix[inv][j] = 1
+                matrix[j][inv] = 1
         # Draw white border
         for i in range(8):
-            inv = -(i+1)
-            for j in [7, -8]:
-                m[i][j] = 0
-                m[j][i] = 0
-                m[inv][j] = 0
-                m[j][inv] = 0
+            inv = -(i + 1)
+            for j in (7, -8):
+                matrix[i][j] = 0
+                matrix[j][i] = 0
+                matrix[inv][j] = 0
+                matrix[j][inv] = 0
         # To keep the code short, it draws an extra box
         # in the lower right corner, this removes it.
         for i in range(-8, 0):
             for j in range(-8, 0):
-                m[i][j] = ' '
+                matrix[i][j] = None
         # Add the timing pattern
         bit = itertools.cycle([1,0])
-        for i in range(8, (len(m)-8)):
+        for i in range(8, (len(matrix) - 8)):
             b = next(bit)
-            m[i][6] = b
-            m[6][i] = b
+            matrix[i][6] = b
+            matrix[6][i] = b
         # Add the extra black pixel
-        m[-8][8] = 1
+        matrix[-8][8] = 1
 
-    def add_position_pattern(self, m):
+    @staticmethod
+    def add_position_pattern(matrix, version):
         """This method draws the position adjustment patterns onto the QR
         Code. All QR code versions larger than one require these special boxes
         called position adjustment patterns.
         """
         # Version 1 does not have a position adjustment pattern
-        if self.version == 1:
+        if version == 1:
             return
         # Get the coordinates for where to place the boxes
-        coordinates = tables.position_adjustment[self.version]
+        coordinates = tables.position_adjustment[version]
         # Get the max and min coordinates to handle special cases
         min_coord = coordinates[0]
         max_coord = coordinates[-1]
         # Draw a box at each intersection of the coordinates
-        for i in coordinates:
-            for j in coordinates:
-                # Do not draw these boxes because they would
-                # interfere with the detection pattern
-                if (i == min_coord and j == min_coord) or \
-                   (i == min_coord and j == max_coord) or \
-                   (i == max_coord and j == min_coord):
-                    continue
-                # Center black pixel
-                m[i][j] = 1
-                # Surround the pixel with a white box
-                for x in [-1,1]:
-                    m[i+x][j+x] = 0
-                    m[i+x][j] = 0
-                    m[i][j+x] = 0
-                    m[i-x][j+x] = 0
-                    m[i+x][j-x] = 0
-                # Surround the white box with a black box
-                for x in [-2,2]:
-                    for y in [0,-1,1]:
-                        m[i+x][j+x] = 1
-                        m[i+x][j+y] = 1
-                        m[i+y][j+x] = 1
-                        m[i-x][j+x] = 1
-                        m[i+x][j-x] = 1
+        for i, j in ((i, j) for i in coordinates for j in coordinates):
+            # Do not draw these boxes because they would
+            # interfere with the detection pattern
+            if (i == min_coord and j == min_coord) or \
+               (i == min_coord and j == max_coord) or \
+               (i == max_coord and j == min_coord):
+                continue
+            # Center black pixel
+            matrix[i][j] = 1
+            # Surround the pixel with a white box
+            for x in (-1, 1):
+                matrix[i + x][j + x] = 0
+                matrix[i + x][j] = 0
+                matrix[i][j + x] = 0
+                matrix[i - x][j + x] = 0
+                matrix[i + x][j - x] = 0
+            # Surround the white box with a black box
+            for x in (-2, 2):
+                for y in (0, -1, 1):
+                    matrix[i + x][j + x] = 1
+                    matrix[i + x][j + y] = 1
+                    matrix[i + y][j + x] = 1
+                    matrix[i - x][j + x] = 1
+                    matrix[i + x][j - x] = 1
 
-    def add_version_pattern(self, m):
+    @staticmethod
+    def add_version_pattern(matrix, version):
         """For QR codes with a version 7 or higher, a special pattern
         specifying the code's version is required.
 
         For further information see:
         http://www.thonky.com/qr-code-tutorial/format-version-information/# example-of-version-7-information-string
         """
-        if self.version < 7:
+        if version < 7:
             return
         # Get the bit fields for this code's version
         # We will iterate across the string, the bit string
         # needs the least significant digit in the zero-th position
-        field = iter(tables.version_pattern[self.version][::-1])
+        field = iter(tables.version_pattern[version][::-1])
         # Where to start placing the pattern
-        start = len(m)-11
+        start = len(matrix) - 11
         # The version pattern is pretty odd looking
         for i in range(6):
             # The pattern is three modules wide
-            for j in range(start, start+3):
+            for j in range(start, start + 3):
                 bit = int(next(field))
                 # Bottom Left
-                m[i][j] = bit
+                matrix[i][j] = bit
                 # Upper right
-                m[j][i] = bit
+                matrix[j][i] = bit
 
-    def make_masks(self, template):
+    @staticmethod
+    def make_masks(matrix, data, error):
         """This method generates all seven masks so that the best mask can
         be determined. The template parameter is a code matrix that will
         server as the base for all the generated masks.
         """
-        nmasks = len(tables.mask_patterns)
-        masks = [''] * nmasks
-        for n in range(nmasks):
-            cur_mask = [list(row) for row in template]
-            masks[n] = cur_mask
+        masks = []
+        for n, pattern in enumerate(tables.mask_patterns):
+            cur_mask = [list(row) for row in matrix]
+            masks.append(cur_mask)
             # Add the type pattern bits to the code
-            QRCodeBuilder.add_type_pattern(cur_mask, tables.type_bits[self.error][n])
+
+            QRCodeBuilder.add_type_pattern(cur_mask, tables.type_bits[error][n])
             # Get the mask pattern
-            pattern = tables.mask_patterns[n]
             # This will read the 1's and 0's one at a time
-            bits = iter(self.buffer.getvalue())
+            bits = iter(data)
             # These will help us do the up, down, up, down pattern
             row_start = itertools.cycle([len(cur_mask) - 1, 0])
             row_stop = itertools.cycle([-1, len(cur_mask)])
@@ -767,14 +768,15 @@ class QRCodeBuilder:
                 # right-left, right-left, etc.
                 column_pair = itertools.cycle([column, column-1])
                 # Go through each row in the pattern moving up, then down
-                for row in range(next(row_start), next(row_stop),
+                for i in range(next(row_start), next(row_stop),
                                  next(direction)):
+                    row = cur_mask[i]
                     # Fill in the right then left column
-                    for i in range(2):
-                        col = next(column_pair)
+                    for x in range(2):
+                        j = next(column_pair)
                         # Go to the next column if we encounter a
                         # preexisting pattern (usually an alignment pattern)
-                        if cur_mask[row][col] != ' ':
+                        if row[j] is not None:
                             continue
                         # Some versions don't have enough bits. You then fill
                         # in the rest of the pattern with 0's. These are
@@ -784,80 +786,79 @@ class QRCodeBuilder:
                         except:
                             bit = 0
                         # If the pattern is True then flip the bit
-                        if pattern(row, col):
-                            cur_mask[row][col] = bit ^ 1
+                        if pattern(i, j):
+                            cur_mask[i][j] = bit ^ 1
                         else:
-                            cur_mask[row][col] = bit
+                            cur_mask[i][j] = bit
         return masks
 
-    def choose_best_mask(self):
+    @staticmethod
+    def choose_best_mask(masks):
         """This method returns the index of the "best" mask as defined by
         having the lowest total penalty score. The penalty rules are defined
         by the standard. The mask with the lowest total score should be the
         easiest to read by optical scanners.
         """
-        self.scores = [[0, 0, 0, 0] for n in range(len(self.masks))]
+        scores = []
+        matrix_size = len(masks[0])
+        patterns = ((0,0,0,0,1,0,1,1,1,0,1),
+                    (1,0,1,1,1,0,1,0,0,0,0))
         # Score penalty rule number 1
         # Look for five consecutive squares with the same color.
         # Each one found gets a penalty of 3 + 1 for every
         # same color square after the first five in the row.
-        for n, mask in enumerate(self.masks):
-            current = mask[0][0]
-            total = 0
+        matrix_range = range(matrix_size)
+        for mask in masks:
+            current = -1
+            pr1 = 0
             # Examine the mask row wise
-            for row in range(0, len(mask)):
+            for row in matrix_range:
                 counter = 0
-                for col  in range(0, len(mask)):
+                for col  in matrix_range:
                     bit = mask[row][col]
                     if bit == current:
                         counter += 1
                     else:
                         if counter >= 5:
-                            total += (counter - 5) + 3
+                            pr1 += (counter - 5) + 3
                         counter = 1
                         current = bit
                 if counter >= 5:
-                    total += (counter - 5) + 3
+                    pr1 += (counter - 5) + 3
             # Examine the mask column wise
-            for col in range(0, len(mask)):
+            for col in matrix_range:
                 counter = 0
-                for row in range(0, len(mask)):
+                for row in matrix_range:
                     bit = mask[row][col]
                     if bit == current:
                         counter += 1
                     else:
                         if counter >= 5:
-                            total += (counter - 5) + 3
+                            pr1 += (counter - 5) + 3
                         counter = 1
                         current = bit
                 if counter >= 5:
-                    total += (counter - 5) + 3
-            self.scores[n][0] = total
+                    pr1 += (counter - 5) + 3
 
-        # Score penalty rule 2
-        # This rule will add 3 to the score for each 2x2 block of the same
-        # colored pixels there are.
-        for n, mask in enumerate(self.masks):
-            count = 0
+            # Score penalty rule 2
+            # This rule will add 3 to the score for each 2x2 block of the same
+            # colored pixels there are.
+            pr2 = 0
             # Don't examine the 0th and Nth row/column
-            for i in range(0, len(mask)-1):
-                for j in range(0, len(mask)-1):
-                    if mask[i][j] == mask[i+1][j]   and \
-                       mask[i][j] == mask[i][j+1]   and \
-                       mask[i][j] == mask[i+1][j+1]:
-                        count += 1
-            self.scores[n][1] = count * 3
+            for i in range(matrix_size - 1):
+                row = mask[i]
+                for j in range(matrix_size - 1):
+                    if row[j] == mask[i + 1][j] and \
+                       row[j] == mask[i][j + 1] and \
+                       row[j] == mask[i + 1][j + 1]:
+                        pr2 += 3
 
-        # Score penalty rule 3
-        # This rule looks for 1011101 within the mask prefixed
-        # and/or suffixed by four zeros.
-        patterns = [[0,0,0,0,1,0,1,1,1,0,1],
-                    [1,0,1,1,1,0,1,0,0,0,0],]
-                    #[0,0,0,0,1,0,1,1,1,0,1,0,0,0,0]]
-        for n, mask in enumerate(self.masks):
-            nmatches = 0
-            for i in range(len(mask)):
-                for j in range(len(mask)):
+            # Score penalty rule 3
+            # This rule looks for 1011101 within the mask prefixed
+            # and/or suffixed by four zeros.
+            pr3 = 0
+            for i in matrix_range:
+                for j in matrix_range:
                     for pattern in patterns:
                         match = True
                         k = j
@@ -868,7 +869,7 @@ class QRCodeBuilder:
                                 break
                             k += 1
                         if match:
-                            nmatches += 1
+                            pr3 += 1
                         match = True
                         k = j
                         # Look for column matches
@@ -878,29 +879,21 @@ class QRCodeBuilder:
                                 break
                             k += 1
                         if match:
-                            nmatches += 1
-            self.scores[n][2] = nmatches * 40
-        # Score the last rule, penalty rule 4. This rule measures how close
-        # the pattern is to being 50% black. The further it deviates from
-        # this this ideal the higher the penalty.
-        for n, mask in enumerate(self.masks):
-            nblack = 0
-            for row in mask:
-                nblack += sum(row)
-            total_pixels = len(mask) ** 2
-            ratio = nblack / total_pixels
-            percent = (ratio * 100) - 50
-            self.scores[n][3] = int((abs(int(percent)) / 5) * 10)
+                            pr3 += 1
+            pr3 *= 40
+            # Score the last rule, penalty rule 4. This rule measures how close
+            # the pattern is to being 50% black. The further it deviates from
+            # this this ideal the higher the penalty.
+            percent = float(sum(map(sum, mask))) / (matrix_size ** 2)
+            pr4 = 10 * int(abs(percent * 100 - 50) / 5)  # N4 = 10
+            scores.append((pr1, pr2, pr3, pr4))
         # Calculate the total for each score
-        totals = [0] * len(self.scores)
-        for i in range(len(self.scores)):
-            for j in range(len(self.scores[i])):
-                totals[i] +=  self.scores[i][j]
+        totals = tuple(map(sum, scores))
         # The lowest total wins
         return totals.index(min(totals))
 
     @staticmethod
-    def add_type_pattern(m, type_bits):
+    def add_type_pattern(matrix, type_bits):
         """This will add the pattern to the QR code that represents the error
         level and the type of mask used to make the code.
         """
@@ -909,20 +902,20 @@ class QRCodeBuilder:
             bit = int(next(field))
             # Skip the timing bits
             if i < 6:
-                m[8][i] = bit
+                matrix[8][i] = bit
             else:
-                m[8][i+1] = bit
-            if -8 < -(i+1):
-                m[-(i+1)][8] = bit
-        for i in range(-8,0):
+                matrix[8][i + 1] = bit
+            if -8 < -(i + 1):
+                matrix[-(i + 1)][8] = bit
+        for i in range(-8, 0):
             bit = int(next(field))
-            m[8][i] = bit
+            matrix[8][i] = bit
             i = -i
             # Skip timing column
             if i > 6:
-                m[i][8] = bit
+                matrix[i][8] = bit
             else:
-                m[i-1][8] = bit
+                matrix[i - 1][8] = bit
 
 
 def _get_symbol_size(version, scale, quiet_zone=4):

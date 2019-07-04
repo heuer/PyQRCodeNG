@@ -12,6 +12,7 @@ This module does not belong to the public API.
 """
 from __future__ import absolute_import, division, print_function, unicode_literals
 import io
+import re
 import math
 import codecs
 import itertools
@@ -20,10 +21,12 @@ from contextlib import contextmanager
 from functools import partial, reduce
 from xml.sax.saxutils import quoteattr
 import pyqrcodeng.tables as tables
+_PY2 = False
 try:  # pragma: no cover
     from itertools import zip_longest
 except ImportError:  # pragma: no cover
     # Py2
+    _PY2 = True
     from itertools import izip_longest as zip_longest, imap as map
     range = xrange
     str = unicode
@@ -34,6 +37,8 @@ try:
     _PYPNG_AVAILABLE = True
 except ImportError:
     pass
+
+_ALPHANUMERIC_PATTERN = re.compile(br'^[' + re.escape(tables.ALPHANUMERIC_CHARS) + br']+\Z')
 
 # <https://wiki.python.org/moin/PortingToPy3k/BilingualQuickRef#New_Style_Classes>
 __metaclass__ = type
@@ -67,11 +72,14 @@ class QRCodeBuilder:
 
         # Guess the mode of the code, this will also be used for
         # error checking
-        guessed_content_type, encoding = QRCodeBuilder._detect_content_type(content, encoding)
+        guessed_content_type, guessed_encoding = QRCodeBuilder._detect_content_type(content, encoding)
+
+        if isinstance(content, int):
+            content = str(content)
 
         encoding_provided = encoding is not None
-        if encoding is None:
-            encoding = 'iso-8859-1'
+        if not encoding_provided:
+            encoding = 'iso-8859-1' if guessed_encoding is None else guessed_encoding
 
         # Store the encoding for use later
         if guessed_content_type == 'kanji':
@@ -85,8 +93,6 @@ class QRCodeBuilder:
             else:
                 raise ValueError("Illegal version {0}, version must be between "
                                  "1 and 40.".format(version))
-
-
         # Decode a 'byte array' contents into a string format
         if isinstance(content, bytes):
             self.data = content.decode(encoding)
@@ -169,17 +175,17 @@ class QRCodeBuilder:
 
         Note, encoding ECI is not yet implemented.
         """
+
+        def next_byte_py2(b):
+            return ord(b)
+
+        def next_byte_py3(b):
+            return b
+
+        next_byte = next_byte_py3 if not _PY2 else next_byte_py2
+
         def two_bytes(c):
             """Output two byte character code as a single integer."""
-            def next_byte(b):
-                """Make sure that character code is an int. Python 2 and
-                3 compatibility.
-                """
-                if not isinstance(b, int):
-                    return ord(b)
-                else:
-                    return b
-
             # Go through the data by looping to every other character
             for i in range(0, len(c), 2):
                 yield (next_byte(c[i]) << 8) | next_byte(c[i+1])
@@ -191,19 +197,12 @@ class QRCodeBuilder:
         except (TypeError, UnicodeError):
             pass
 
-        # See if that data is alphanumeric based on the standards
-        # special ASCII table
-        valid_characters = ''.join(tables.ascii_codes.keys())
-
-        # Force the characters into a byte array
-        valid_characters = valid_characters.encode('ASCII')
-
         try:
             if isinstance(content, bytes):
                 c = content.decode('ASCII')
             else:
                 c = str(content).encode('ASCII')
-            if all(map(lambda x: x in valid_characters, c)):
+            if _ALPHANUMERIC_PATTERN.match(c):
                 return 'alphanumeric', 'ASCII'
         # This occurs if the content does not contain ASCII characters.
         # Since the whole point of the if statement is to look for ASCII
@@ -257,7 +256,7 @@ class QRCodeBuilder:
             capacity = tables.data_capacity[version][error][mode_num]
             # Check the capacity
             # Kanji's count in the table is "characters" which are two bytes
-            if mode_num == tables.modes['kanji'] \
+            if mode_num == tables.MODE_KANJI \
                     and capacity >= math.ceil(len(content) / 2):
                 return version
             if capacity >= len(content):
@@ -301,7 +300,7 @@ class QRCodeBuilder:
         elif 27 <= self.version <= 40:
             max_version = 40
         data_length = tables.data_length_field[max_version][self.mode_num]
-        if self.mode_num != tables.modes['kanji']:
+        if self.mode_num != tables.MODE_KANJI:
             length_string = QRCodeBuilder.binary_string(len(self.data), data_length)
         else:
             length_string = QRCodeBuilder.binary_string(len(self.data) / 2, data_length)
@@ -310,17 +309,17 @@ class QRCodeBuilder:
                                'within this version of a QRCode.')
         return length_string
 
-    def encode(self):
+    def encode(self, mode_num):
         """This method encodes the data into a binary string using
         the appropriate algorithm specified by the mode.
         """
-        if self.mode_num == tables.modes['alphanumeric']:
+        if mode_num == tables.MODE_ALPHANUMERIC:
             encoded = self.encode_alphanumeric()
-        elif self.mode_num == tables.modes['numeric']:
+        elif mode_num == tables.MODE_NUMERIC:
             encoded = self.encode_numeric()
-        elif self.mode_num == tables.modes['binary']:
+        elif mode_num == tables.MODE_BYTE:
             encoded = self.encode_bytes()
-        elif self.mode_num == tables.modes['kanji']:
+        elif mode_num == tables.MODE_KANJI:
             encoded = self.encode_kanji()
         return encoded
 
@@ -331,17 +330,13 @@ class QRCodeBuilder:
         # Convert the string to upper case
         self.data = self.data.upper()
         # Change the data such that it uses a QR code ascii table
-        ascii = []
-        for char in self.data:
-            if isinstance(char, int):
-                ascii.append(tables.ascii_codes[chr(char)])
-            else:
-                ascii.append(tables.ascii_codes[char])
+        to_byte = tables.ALPHANUMERIC_CHARS.find
+        ascii_data = map(to_byte, self.data)
         # Now perform the algorithm that will make the ascii into bit fields
         with io.StringIO() as buf:
-            for (a,b) in QRCodeBuilder.grouper(2, ascii):
+            for a, b in QRCodeBuilder.grouper(2, ascii_data, fillvalue=0):
                 if b is not None:
-                    buf.write(QRCodeBuilder.binary_string((45*a)+b, 11))
+                    buf.write(QRCodeBuilder.binary_string(45 * a + b, 11))
                 else:
                     # This occurs when there is an odd number
                     # of characters in the data
@@ -433,7 +428,7 @@ class QRCodeBuilder:
         # Encode the data into a QR code
         self.buffer.write(QRCodeBuilder.binary_string(self.mode_num, 4))
         self.buffer.write(self.get_data_length())
-        self.buffer.write(self.encode())
+        self.buffer.write(self.encode(self.mode_num))
         # Converts the buffer into "code word" integers.
         # The online debugger outputs them this way, makes
         # for easier comparisons.
@@ -442,7 +437,7 @@ class QRCodeBuilder:
         #    print(int(s[i:i+8], 2), end=',')
         # print()
         
-        # Fix for issue #3: https://github.com/mnooner256/pyqrcode/issues/3#
+        # Fix for issue #3: https://github.com/mnooner256/pyqrcode/issues/#3
         # I was performing the terminate_bits() part in the encoding.
         # As per the standard, terminating bits are only supposed to
         # be added after the bit stream is complete. I took that to
@@ -745,28 +740,28 @@ class QRCodeBuilder:
         server as the base for all the generated masks.
         """
         masks = []
+        matrix_size = len(matrix)
         for n, pattern in enumerate(tables.mask_patterns):
             cur_mask = [list(row) for row in matrix]
             masks.append(cur_mask)
             # Add the type pattern bits to the code
-
             QRCodeBuilder.add_type_pattern(cur_mask, tables.type_bits[error][n])
             # Get the mask pattern
             # This will read the 1's and 0's one at a time
             bits = iter(data)
             # These will help us do the up, down, up, down pattern
-            row_start = itertools.cycle([len(cur_mask) - 1, 0])
-            row_stop = itertools.cycle([-1, len(cur_mask)])
+            row_start = itertools.cycle([matrix_size - 1, 0])
+            row_stop = itertools.cycle([-1, matrix_size])
             direction = itertools.cycle([-1, 1])
             # The data pattern is added using pairs of columns
-            for column in range(len(cur_mask) - 1, 0, -2):
+            for column in range(matrix_size - 1, 0, -2):
                 # The vertical timing pattern is an exception to the rules,
                 # move the column counter over by one
                 if column <= 6:
                     column -= 1
                 # This will let us fill in the pattern
                 # right-left, right-left, etc.
-                column_pair = itertools.cycle([column, column-1])
+                column_pair = itertools.cycle([column, column - 1])
                 # Go through each row in the pattern moving up, then down
                 for i in range(next(row_start), next(row_stop),
                                  next(direction)):
@@ -803,19 +798,20 @@ class QRCodeBuilder:
         matrix_size = len(masks[0])
         patterns = ((0,0,0,0,1,0,1,1,1,0,1),
                     (1,0,1,1,1,0,1,0,0,0,0))
-        # Score penalty rule number 1
-        # Look for five consecutive squares with the same color.
-        # Each one found gets a penalty of 3 + 1 for every
-        # same color square after the first five in the row.
         matrix_range = range(matrix_size)
         for mask in masks:
-            current = -1
+            # Score penalty rule number 1
+            # Look for five consecutive squares with the same color.
+            # Each one found gets a penalty of 3 + 1 for every
+            # same color square after the first five in the row.
             pr1 = 0
             # Examine the mask row wise
-            for row in matrix_range:
+            for i in matrix_range:
                 counter = 0
-                for col  in matrix_range:
-                    bit = mask[row][col]
+                current = -1
+                row = mask[i]
+                for j in matrix_range:
+                    bit = row[j]
                     if bit == current:
                         counter += 1
                     else:
@@ -826,10 +822,11 @@ class QRCodeBuilder:
                 if counter >= 5:
                     pr1 += (counter - 5) + 3
             # Examine the mask column wise
-            for col in matrix_range:
+            for j in matrix_range:
                 counter = 0
-                for row in matrix_range:
-                    bit = mask[row][col]
+                current = -1
+                for i in matrix_range:
+                    bit = mask[j][i]
                     if bit == current:
                         counter += 1
                     else:
@@ -1255,7 +1252,6 @@ def _eps(code, version, file_or_path, scale=1, module_color=(0, 0, 0),
             (default: ``4``). Set to zero (``0``) if the code shouldn't
             have a border.
     """
-    from functools import partial
     import time
     import textwrap
 
@@ -1461,3 +1457,112 @@ def _terminal_win(code, version, quiet_zone=None):  # pragma: no cover
             write('  ' * cnt)
         set_color(default_color)  # reset color
         write('\n')
+
+
+
+def _terminal_deprecated(code, module_color='default', background='reverse', quiet_zone=4):
+    """This method returns a string containing ASCII escape codes,
+    such that if printed to a terminal, it will display a vaild
+    QR code. The module_color and the background color should be keys
+    in the tables.term_colors table for printing using the 8/16
+    color scheme. Alternatively, they can be a number between 0 and
+    256 in order to use the 88/256 color scheme. Otherwise, a
+    ValueError will be raised.
+    Note, the code is outputted by changing the background color. Then
+    two spaces are written to the terminal. Finally, the terminal is
+    reset back to how it was.
+    """
+    buf = io.StringIO()
+
+    #: This is a table of ASCII escape code for terminal colors. QR codes
+    #: are drawn using a space with a colored background. Hence, only
+    #: codes affecting background colors have been added.
+    #: http://misc.flogisoft.com/bash/tip_colors_and_formatting
+    term_colors = {
+        'default': 49,
+        'background': 49,
+
+        'reverse': 7,
+        'reversed': 7,
+        'inverse': 7,
+        'inverted': 7,
+
+        'black': 40,
+        'red': 41,
+        'green': 42,
+        'yellow': 43,
+        'blue': 44,
+        'magenta': 45,
+        'cyan': 46,
+        'light gray': 47,
+        'light grey': 47,
+        'dark gray': 100,
+        'dark grey': 100,
+        'light red': 101,
+        'light green': 102,
+        'light blue': 103,
+        'light yellow': 104,
+        'light magenta': 105,
+        'light cyan': 106,
+        'white': 107
+    }
+
+    def draw_border():
+        for i in range(quiet_zone):
+            buf.write(background)
+
+    if module_color in term_colors:
+        data = '\033[{0}m  \033[0m'.format(
+            term_colors[module_color])
+    elif 0 <= module_color <= 256:
+        data = '\033[48;5;{0}m  \033[0m'.format(module_color)
+    else:
+        raise ValueError('The module color, {0}, must a key in '
+                         'pyqrcode.tables.term_colors or a number '
+                         'between 0 and 256.'.format(
+                         module_color))
+
+    if background in term_colors:
+        background = '\033[{0}m  \033[0m'.format(term_colors[background])
+    elif 0 <= background <= 256:
+        background = '\033[48;5;{0}m  \033[0m'.format(background)
+    else:
+        raise ValueError('The background color, {0}, must a key in '
+                         'pyqrcode.tables.term_colors or a number '
+                         'between 0 and 256.'.format(
+                         background))
+
+    #This will be the beginning and ending row for the code.
+    border_row = background * (len(code[0]) + (2 * quiet_zone))
+
+    #Make sure we begin on a new line, and force the terminal back
+    #to normal
+    buf.write('\n')
+
+    #QRCodes have a quiet zone consisting of background modules
+    for i in range(quiet_zone):
+        buf.write(border_row)
+        buf.write('\n')
+
+    for row in code:
+        #Each code has a quiet zone on the left side, this is the left
+        #border for this code
+        draw_border()
+
+        for bit in row:
+            if bit == 1:
+                buf.write(data)
+            elif bit == 0:
+                buf.write(background)
+
+        #Each row ends with a quiet zone on the right side, this is the
+        #right hand border background modules
+        draw_border()
+        buf.write('\n')
+
+    #QRCodes have a background quiet zone row following the code
+    for i in range(quiet_zone):
+        buf.write(border_row)
+        buf.write('\n')
+
+    return buf.getvalue()

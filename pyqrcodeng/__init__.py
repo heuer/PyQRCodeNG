@@ -129,7 +129,6 @@ class QRCode:
         self.encoding = self.builder.encoding
         self.version = self.builder.version
         self.mode = self.builder.mode
-        self.mode_num = self.builder.mode_num
         self.error = self.builder.error
 
     def __str__(self):

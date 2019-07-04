@@ -10,7 +10,7 @@ import pyqrcodeng as pyqrcode
 
 def test_negative_int():
     qr = pyqrcode.create(-7)
-    assert '-7' == qr.data
+    assert b'-7' == qr.data
     assert 'alphanumeric' == qr.mode
 
 

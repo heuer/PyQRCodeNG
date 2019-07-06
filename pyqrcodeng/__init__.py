@@ -198,6 +198,8 @@ class QRCode:
         left settable because such a wide quiet zone is unnecessary in many
         applications where the QR code is not being printed.
 
+        .. deprecated:: 1.3.0
+
         Example:
             >>> code = pyqrcodeng.QRCode("I don't like spam!")
             >>> print(code.symbol_size(1))
@@ -231,9 +233,6 @@ class QRCode:
         PNG has a bit depth of 1. The file parameter is used to specify where
         to write the image to. It can either be an writable stream or a
         file path.
-
-        .. note::
-            This method depends on Segno to actually create the PNG file.
 
         This method will write the given *file* out as a PNG file. The file
         can be either a string file path, or a writable stream. The file
@@ -288,6 +287,8 @@ class QRCode:
 
         The parameters are passed directly to the :py:meth:`png` method. Refer
         to that method's documentation for the meaning behind the parameters.
+
+        .. deprecated:: 1.3.0
         
         .. note::
             This method depends on the Segno package to actually create the
@@ -489,6 +490,8 @@ class QRCode:
         should be. According to the standard this should be 4 modules. It is
         left settable because such a wide quiet zone is unnecessary in many
         applications.
+
+        .. deprecated:: 1.3.0
 
         Example:
             >>> code = pyqrcodeng.create('Example')

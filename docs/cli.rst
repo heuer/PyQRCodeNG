@@ -68,4 +68,4 @@ The generated QR Codes will have a recommended quiet zone around the
 symbol. To change the size of the quiet zone, ``quietzone`` can be utilized::
 
     $ pyqr --quietzone=0 --output=black-magic-woman.svg "Black Magic Woman"
-    $ pyqr --qzr=10 --output=diamond.png "Shine On You Crazy Diamond"
+    $ pyqr --qz=10 --output=diamond.png "Shine On You Crazy Diamond"

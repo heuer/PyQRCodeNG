@@ -33,8 +33,8 @@ You can also use a positive integer as the code's contents.
 
 .. code-block:: python
 
-  >>> number = pyqrcodeng.create(123456789012345)
-  >>> number2 = pyqrcodeng.create('0987654321')
+   >>> number = pyqrcodeng.create(123456789012345)
+    >>> number2 = pyqrcodeng.create('0987654321')
 
 Alphanumeric
 ============
@@ -56,6 +56,7 @@ the available characters will let you encode a URL.
 
   >>> url = pyqrcodeng.create('http://uca.edu'.upper())
 
+
 Kanji
 =====
 
@@ -70,9 +71,10 @@ Alternatively, you can explicitly define the data's encoding.
 
 .. code-block:: python
 
-  >>> utf8 = 'モンティ'.encode('utf-8')
-  >>> monty = pyqrcodeng.create(utf8, encoding='utf-8')
-  >>> python = pyqrcodeng.create('錦蛇')
+    >>> utf8 = 'モンティ'.encode('utf-8')
+    >>> monty = pyqrcodeng.create(utf8, encoding='utf-8')
+    >>> python = pyqrcodeng.create('錦蛇')
+
 
 Binary
 ======
@@ -88,5 +90,5 @@ characters will not have their case changed.
 
 .. code-block:: python
 
-  >>> life = pyqrcodeng.create('''MR. CREOSOTE: Better get a bucket. I'm going to throw up.
+   >>> life = pyqrcodeng.create('''MR. CREOSOTE: Better get a bucket. I'm going to throw up.
       MAITRE D: Uh, Gaston! A bucket for monsieur. There you are, monsieur.''')

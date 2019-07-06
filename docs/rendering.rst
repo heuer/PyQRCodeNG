@@ -20,37 +20,37 @@ none of the built in renderers are satisfactory.
 
 .. code-block:: python
 
-  >>> number = pyqrcodeng.create(123)
-  >>> print(number.text())
-  00000000000000000000000000000
-  00000000000000000000000000000
-  00000000000000000000000000000
-  00000000000000000000000000000
-  00001111111011110011111110000
-  00001000001000101010000010000
-  00001011101001010010111010000
-  00001011101010011010111010000
-  00001011101000100010111010000
-  00001000001001001010000010000
-  00001111111010101011111110000
-  00000000000001011000000000000
-  00000010111011010100010010000
-  00001011110001111101010010000
-  00000111111011100101001000000
-  00001001100011010011110010000
-  00001111111001101011001110000
-  00000000000010000000001100000
-  00001111111000111100100100000
-  00001000001011010110001100000
-  00001011101010110000101010000
-  00001011101001111111010100000
-  00001011101011101001011010000
-  00001000001001011001110000000
-  00001111111000011011011010000
-  00000000000000000000000000000
-  00000000000000000000000000000
-  00000000000000000000000000000
-  00000000000000000000000000000
+    >>> number = pyqrcodeng.create(123)
+    >>> print(number.text())
+    00000000000000000000000000000
+    00000000000000000000000000000
+    00000000000000000000000000000
+    00000000000000000000000000000
+    00001111111011110011111110000
+    00001000001000101010000010000
+    00001011101001010010111010000
+    00001011101010011010111010000
+    00001011101000100010111010000
+    00001000001001001010000010000
+    00001111111010101011111110000
+    00000000000001011000000000000
+    00000010111011010100010010000
+    00001011110001111101010010000
+    00000111111011100101001000000
+    00001001100011010011110010000
+    00001111111001101011001110000
+    00000000000010000000001100000
+    00001111111000111100100100000
+    00001000001011010110001100000
+    00001011101010110000101010000
+    00001011101001111111010100000
+    00001011101011101001011010000
+    00001000001001011001110000000
+    00001111111000011011011010000
+    00000000000000000000000000000
+    00000000000000000000000000000
+    00000000000000000000000000000
+    00000000000000000000000000000
 
 
 Terminal Rendering
@@ -62,9 +62,8 @@ codes. Hence, most Linux terminals are supported.
 
 .. code-block:: python
 
-  >>> text = pyqrcodeng.create('Example')
-  >>> text.term()
-
+    >>> text = pyqrcodeng.create('Example')
+    >>> text.term()
 
 
 Image Rendering
@@ -121,6 +120,7 @@ Tkinter application very simple.
     >>> # The QR code is now visible
     >>> label.pack()
 
+
 Scalable Vector Graphic (SVG)
 -----------------------------
 
@@ -133,13 +133,13 @@ default foreground (module) color is black.
 
 .. code-block:: python
 
-  >>> url = pyqrcodeng.create('http://uca.edu')
-  >>> url.svg('uca.svg', scale=4)
-  >>> # in-memory stream is also supported
-  >>> buffer = io.BytesIO()
-  >>> url.svg(buffer)
-  >>> # do whatever you want with buffer.getvalue()
-  >>> print(list(buffer.getvalue()))
+    >>> url = pyqrcodeng.create('http://uca.edu')
+    >>> url.svg('uca.svg', scale=4)
+    >>> # in-memory stream is also supported
+    >>> buffer = io.BytesIO()
+    >>> url.svg(buffer)
+    >>> # do whatever you want with buffer.getvalue()
+    >>> print(list(buffer.getvalue()))
   
 You can change the colors of the data-modules using the *module_color*
 parameter. Likewise, you can specify a background using the *background*
@@ -147,10 +147,11 @@ parameter. Each of these parameters take a HTML style color.
 
 .. code-block:: python
 
-  >>> url.svg('uca.svg', scale=4, background="white", module_color="#7D007D")
+    >>> url.svg('uca.svg', scale=4, background="white", module_color="#7D007D")
 
 You can also suppress certain parts of the SVG document. In other words you
 can create a SVG fragment.
+
 
 Encapsulated PostScript (EPS)
 -----------------------------
@@ -166,11 +167,12 @@ being drawn at 1 point (1/72 of an inch).
 
 .. code-block:: python
 
-  >>> qr = pyqrcodeng.create('Hello world')
-  >>> qr.eps('hello-world.eps', scale=2.5, module_color='#36C')
-  >>> qr.eps('hello-world2.eps', background='#eee')
-  >>> out = io.StringIO()
-  >>> qr.eps(out, module_color=(.4, .4, .4))
+    >>> qr = pyqrcodeng.create('Hello world')
+    >>> qr.eps('hello-world.eps', scale=2.5, module_color='#36C')
+    >>> qr.eps('hello-world2.eps', background='#eee')
+    >>> out = io.StringIO()
+    >>> qr.eps(out, module_color=(.4, .4, .4))
+
 
 Portable Network Graphic (PNG)
 ------------------------------
@@ -180,21 +182,21 @@ the :py:meth:`pyqrcodeng.QRCode.png` method.
 
 .. note::
 
-  This renderer requires the `segno <https://pypi.org/project/segno/>`_
+  This renderer requires the `PyPNG <https://pypi.org/project/pypng/>`_
   module.
 
 .. code-block:: python
 
-  >>> url = pyqrcodeng.create('http://uca.edu')
-  >>> with open('code.png', 'w') as fstream:
-  ...     url.png(fstream, scale=5)
-  >>> # same as above
-  >>> url.png('code.png', scale=5)
-  >>> # in-memory stream is also supported
-  >>> buffer = io.BytesIO()
-  >>> url.png(buffer)
-  >>> # do whatever you want with buffer.getvalue()
-  >>> print(list(buffer.getvalue()))
+    >>> url = pyqrcodeng.create('http://uca.edu')
+    >>> with open('code.png', 'w') as fstream:
+    ...     url.png(fstream, scale=5)
+    >>> # same as above
+    >>> url.png('code.png', scale=5)
+    >>> # in-memory stream is also supported
+    >>> buffer = io.BytesIO()
+    >>> url.png(buffer)
+    >>> # do whatever you want with buffer.getvalue()
+    >>> print(list(buffer.getvalue()))
 
 
 Colors should be a list or tuple containing numbers between zero an 255. The
@@ -208,7 +210,7 @@ black, and the background modules colored white.
 
 .. code-block:: python
 
-  >>> url.png('uca-colors.png', scale=6, 
-  ...         module_color=[0, 0, 0, 128], 
-  ...         background=[0xff, 0xff, 0xcc])
+    >>> url.png('uca-colors.png', scale=6,
+    ...         module_color=[0, 0, 0, 128],
+    ...         background=[0xff, 0xff, 0xcc])
 

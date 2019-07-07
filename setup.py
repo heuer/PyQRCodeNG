@@ -49,10 +49,10 @@ setup(
     packages=['pyqrcodeng'],
     version=version,
     long_description=read('README.rst', 'CHANGES.rst'),
-    description='Fork of PyQRCode - A QR code generator written purely in Python with SVG, EPS, PNG and terminal output.',
-    author='Michael Nooner, Lars Heuer',
+    description='PyQRCode New Generation -- A QR code generator written purely in Python with SVG, EPS, PNG and terminal output.',
+    author='Lars Heuer',
     author_email='heuer@semagia.com',
-    url='https://github.com/heuer/pyqrcodeng',
+    url='https://github.com/pyqrcode/pyqrcodeNG',
     keywords=['qrcode', 'qr'],
     license='BSD',
     extras_require={
@@ -70,7 +70,6 @@ setup(
         'Operating System :: POSIX',
         'Operating System :: Microsoft :: Windows',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 2.6',
         'Programming Language :: Python :: 2.7',
         ],
 )

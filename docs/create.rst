@@ -10,8 +10,8 @@ Below are some examples of creating QR Codes using the automatated system.
 
 .. code-block:: python
 
-  >>> url = pyqrcodeng.create('http://uca.edu')
-  >>> url = pyqrcodeng.create('http://uca.edu', error='L')
+    >>> url = pyqrcodeng.create('http://uca.edu')
+    >>> url = pyqrcodeng.create('http://uca.edu', error='L')
 
 There are many situations where you might wish to have more
 fine grained control over how the QR Code is generated. You can specify all the
@@ -46,4 +46,4 @@ forces the encoding to be binary (rather than numeric).
 
 .. code-block:: python
 
-  >>> big_code = pyqrcodeng.create('0987654321', error='L', version=27, mode='binary')
+    >>> big_code = pyqrcodeng.create('0987654321', error='L', version=27, mode='binary')

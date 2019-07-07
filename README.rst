@@ -2,7 +2,7 @@ PyQRCodeNG
 ==========
 
 The PyQRCodeNG module is a QR code generator that is simple to use and written
-in pure Python. The module can automates most of the building process for
+in pure Python. The module automates most of the building process for
 creating QR codes. Most codes can be created using only two lines of code!
 
 Unlike other generators, all of the helpers can be controlled manually. You are
@@ -21,8 +21,8 @@ standard.
 Requirements
 ------------
 
-PyQRCodeNG only requires Python 2.6, Python 2.7, or Python 3. You may
-want to install ``PyPNG`` in order to render PNG files, but it is optional.
+PyQRCodeNG only requires Python 2.7 or Python 3. You may want to install
+``PyPNG`` in order to render PNG files, but it is optional.
 
 Installation
 ------------

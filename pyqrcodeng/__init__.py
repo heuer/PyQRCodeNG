@@ -9,8 +9,8 @@
 as possible. It does this by using sane defaults and autodetection to make
 creating a QR Code very simple.
 
-It is recommended that you use the :func:`pyqrcode.create` function to build the
-QRCode object. This results in cleaner looking code.
+It is recommended that you use the :func:`pyqrcodeng.create` function to build
+the :class:`QRCode` object. This results in cleaner looking code.
 
 Examples:
         >>> import pyqrcodeng
@@ -35,7 +35,7 @@ except NameError:
 # <https://wiki.python.org/moin/PortingToPy3k/BilingualQuickRef#New_Style_Classes>
 __metaclass__ = type
 
-__version__ = '1.3.3'
+__version__ = '1.3.4'
 
 
 def create(content, error='H', version=None, mode=None, encoding=None):
@@ -129,7 +129,6 @@ class QRCode:
         self.encoding = self.builder.encoding
         self.version = self.builder.version
         self.mode = self.builder.mode
-        self.mode_num = self.builder.mode_num
         self.error = self.builder.error
 
     def __str__(self):
@@ -182,7 +181,7 @@ class QRCode:
 
     def get_png_size(self, scale=1, quiet_zone=4):
         """
-        DEPRECATED, use symbol_size()
+        DEPRECATED, use :meth:`pyqrcodeng.QRCode.symbol_size()`
 
         This is method helps users determine what *scale* to use when
         creating a PNG of this QR code. It is meant mostly to be used in the
@@ -198,6 +197,8 @@ class QRCode:
         should be. According to the standard this should be 4 modules. It is
         left settable because such a wide quiet zone is unnecessary in many
         applications where the QR code is not being printed.
+
+        .. deprecated:: 1.3.0
 
         Example:
             >>> code = pyqrcodeng.QRCode("I don't like spam!")
@@ -232,9 +233,6 @@ class QRCode:
         PNG has a bit depth of 1. The file parameter is used to specify where
         to write the image to. It can either be an writable stream or a
         file path.
-
-        .. note::
-            This method depends on Segno to actually create the PNG file.
 
         This method will write the given *file* out as a PNG file. The file
         can be either a string file path, or a writable stream. The file
@@ -277,7 +275,8 @@ class QRCode:
 
     def png_as_base64_str(self, scale=1, module_color=(0, 0, 0, 255),
                           background=(255, 255, 255, 255), quiet_zone=4):
-        """DEPRECATED, use png_data_uri()
+        """DEPRECATED, use :meth:`pyqrcodeng.QRCode.png_data_uri`.
+
         This method uses the png render and returns the PNG image encoded as
         base64 string. This can be useful for creating dynamic PNG images for
         web development, since no file needs to be created.
@@ -289,6 +288,8 @@ class QRCode:
 
         The parameters are passed directly to the :py:meth:`png` method. Refer
         to that method's documentation for the meaning behind the parameters.
+
+        .. deprecated:: 1.3.0
         
         .. note::
             This method depends on the Segno package to actually create the
@@ -306,7 +307,8 @@ class QRCode:
         """\
         Converts the QR Code into a PNG data URI.
 
-        Uses the same keyword parameters as the usual PNG serializer.
+        Uses the same keyword parameters as the usual PNG serializer,
+        see :py:meth:`QRCode.png` for details.
 
         :rtype: str
         """
@@ -451,7 +453,7 @@ class QRCode:
 
     def terminal(self, module_color='default', background='reverse',
                  quiet_zone=4):
-        """DEPRECATED, use term()
+        """DEPRECATED, use :meth:`term`
 
         This method returns a string containing ASCII escape codes,
         such that if printed to a compatible terminal, it will display
@@ -490,6 +492,8 @@ class QRCode:
         should be. According to the standard this should be 4 modules. It is
         left settable because such a wide quiet zone is unnecessary in many
         applications.
+
+        .. deprecated:: 1.3.0
 
         Example:
             >>> code = pyqrcodeng.create('Example')

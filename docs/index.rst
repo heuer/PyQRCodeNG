@@ -22,13 +22,15 @@ standard.
 Contents:
 
 .. toctree::
-   :maxdepth: 1
+    :maxdepth: 1
 
-   create
-   encoding
-   rendering
-   moddoc
-   glossary
+    cli
+    create
+    encoding
+    rendering
+    moddoc
+    glossary
+
 
 Requirements
 ============
@@ -54,7 +56,7 @@ PyQRCodeNG is a fork of PyQRCode since the latter seems to be unmaintained.
 The API is mainly compatible to PyQRCode. In your code you can use the following
 import without changing the QR Code generation code::
 
-   >>> import pyqrcodeng as pyqrcode
+    >>> import pyqrcodeng as pyqrcode
 
 
 Usage
@@ -82,10 +84,10 @@ Developer Documentation
 =======================
 
 .. toctree::
-   :maxdepth: 1
+    :maxdepth: 1
 
-   moddoc
-   tables
+    moddoc
+    qrspecial
 
 
 Indices and tables

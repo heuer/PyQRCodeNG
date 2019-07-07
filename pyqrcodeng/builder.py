@@ -12,6 +12,7 @@ This module does not belong to the public API.
 """
 from __future__ import absolute_import, division, print_function, unicode_literals
 import io
+import re
 import math
 import codecs
 import itertools
@@ -20,10 +21,12 @@ from contextlib import contextmanager
 from functools import partial, reduce
 from xml.sax.saxutils import quoteattr
 import pyqrcodeng.tables as tables
+_PY2 = False
 try:  # pragma: no cover
     from itertools import zip_longest
 except ImportError:  # pragma: no cover
     # Py2
+    _PY2 = True
     from itertools import izip_longest as zip_longest, imap as map
     range = xrange
     str = unicode
@@ -34,6 +37,8 @@ try:
     _PYPNG_AVAILABLE = True
 except ImportError:
     pass
+
+_ALPHANUMERIC_PATTERN = re.compile(br'^[' + re.escape(tables.ALPHANUMERIC_CHARS) + br']+\Z')
 
 # <https://wiki.python.org/moin/PortingToPy3k/BilingualQuickRef#New_Style_Classes>
 __metaclass__ = type
@@ -67,11 +72,14 @@ class QRCodeBuilder:
 
         # Guess the mode of the code, this will also be used for
         # error checking
-        guessed_content_type, encoding = QRCodeBuilder._detect_content_type(content, encoding)
+        guessed_content_type, guessed_encoding = QRCodeBuilder._detect_content_type(content, encoding)
+
+        if isinstance(content, int):
+            content = str(content)
 
         encoding_provided = encoding is not None
-        if encoding is None:
-            encoding = 'iso-8859-1'
+        if not encoding_provided:
+            encoding = 'iso-8859-1' if guessed_encoding is None else guessed_encoding
 
         # Store the encoding for use later
         if guessed_content_type == 'kanji':
@@ -85,8 +93,6 @@ class QRCodeBuilder:
             else:
                 raise ValueError("Illegal version {0}, version must be between "
                                  "1 and 40.".format(version))
-
-
         # Decode a 'byte array' contents into a string format
         if isinstance(content, bytes):
             self.data = content.decode(encoding)
@@ -169,17 +175,17 @@ class QRCodeBuilder:
 
         Note, encoding ECI is not yet implemented.
         """
+
+        def next_byte_py2(b):
+            return ord(b)
+
+        def next_byte_py3(b):
+            return b
+
+        next_byte = next_byte_py3 if not _PY2 else next_byte_py2
+
         def two_bytes(c):
             """Output two byte character code as a single integer."""
-            def next_byte(b):
-                """Make sure that character code is an int. Python 2 and
-                3 compatibility.
-                """
-                if not isinstance(b, int):
-                    return ord(b)
-                else:
-                    return b
-
             # Go through the data by looping to every other character
             for i in range(0, len(c), 2):
                 yield (next_byte(c[i]) << 8) | next_byte(c[i+1])
@@ -191,19 +197,12 @@ class QRCodeBuilder:
         except (TypeError, UnicodeError):
             pass
 
-        # See if that data is alphanumeric based on the standards
-        # special ASCII table
-        valid_characters = ''.join(tables.ascii_codes.keys())
-
-        # Force the characters into a byte array
-        valid_characters = valid_characters.encode('ASCII')
-
         try:
             if isinstance(content, bytes):
                 c = content.decode('ASCII')
             else:
                 c = str(content).encode('ASCII')
-            if all(map(lambda x: x in valid_characters, c)):
+            if _ALPHANUMERIC_PATTERN.match(c):
                 return 'alphanumeric', 'ASCII'
         # This occurs if the content does not contain ASCII characters.
         # Since the whole point of the if statement is to look for ASCII
@@ -257,7 +256,7 @@ class QRCodeBuilder:
             capacity = tables.data_capacity[version][error][mode_num]
             # Check the capacity
             # Kanji's count in the table is "characters" which are two bytes
-            if mode_num == tables.modes['kanji'] \
+            if mode_num == tables.MODE_KANJI \
                     and capacity >= math.ceil(len(content) / 2):
                 return version
             if capacity >= len(content):
@@ -301,7 +300,7 @@ class QRCodeBuilder:
         elif 27 <= self.version <= 40:
             max_version = 40
         data_length = tables.data_length_field[max_version][self.mode_num]
-        if self.mode_num != tables.modes['kanji']:
+        if self.mode_num != tables.MODE_KANJI:
             length_string = QRCodeBuilder.binary_string(len(self.data), data_length)
         else:
             length_string = QRCodeBuilder.binary_string(len(self.data) / 2, data_length)
@@ -310,17 +309,17 @@ class QRCodeBuilder:
                                'within this version of a QRCode.')
         return length_string
 
-    def encode(self):
+    def encode(self, mode_num):
         """This method encodes the data into a binary string using
         the appropriate algorithm specified by the mode.
         """
-        if self.mode_num == tables.modes['alphanumeric']:
+        if mode_num == tables.MODE_ALPHANUMERIC:
             encoded = self.encode_alphanumeric()
-        elif self.mode_num == tables.modes['numeric']:
+        elif mode_num == tables.MODE_NUMERIC:
             encoded = self.encode_numeric()
-        elif self.mode_num == tables.modes['binary']:
+        elif mode_num == tables.MODE_BYTE:
             encoded = self.encode_bytes()
-        elif self.mode_num == tables.modes['kanji']:
+        elif mode_num == tables.MODE_KANJI:
             encoded = self.encode_kanji()
         return encoded
 
@@ -331,17 +330,13 @@ class QRCodeBuilder:
         # Convert the string to upper case
         self.data = self.data.upper()
         # Change the data such that it uses a QR code ascii table
-        ascii = []
-        for char in self.data:
-            if isinstance(char, int):
-                ascii.append(tables.ascii_codes[chr(char)])
-            else:
-                ascii.append(tables.ascii_codes[char])
+        to_byte = tables.ALPHANUMERIC_CHARS.find
+        ascii_data = map(to_byte, self.data)
         # Now perform the algorithm that will make the ascii into bit fields
         with io.StringIO() as buf:
-            for (a,b) in QRCodeBuilder.grouper(2, ascii):
+            for a, b in QRCodeBuilder.grouper(2, ascii_data, fillvalue=0):
                 if b is not None:
-                    buf.write(QRCodeBuilder.binary_string((45*a)+b, 11))
+                    buf.write(QRCodeBuilder.binary_string(45 * a + b, 11))
                 else:
                     # This occurs when there is an odd number
                     # of characters in the data
@@ -433,7 +428,7 @@ class QRCodeBuilder:
         # Encode the data into a QR code
         self.buffer.write(QRCodeBuilder.binary_string(self.mode_num, 4))
         self.buffer.write(self.get_data_length())
-        self.buffer.write(self.encode())
+        self.buffer.write(self.encode(self.mode_num))
         # Converts the buffer into "code word" integers.
         # The online debugger outputs them this way, makes
         # for easier comparisons.
@@ -442,7 +437,7 @@ class QRCodeBuilder:
         #    print(int(s[i:i+8], 2), end=',')
         # print()
         
-        # Fix for issue #3: https://github.com/mnooner256/pyqrcode/issues/3#
+        # Fix for issue #3: https://github.com/mnooner256/pyqrcode/issues/#3
         # I was performing the terminate_bits() part in the encoding.
         # As per the standard, terminating bits are only supposed to
         # be added after the bit stream is complete. I took that to
@@ -607,19 +602,19 @@ class QRCodeBuilder:
         # Get the size of the underlying matrix
         matrix_size = _get_symbol_size(self.version, scale=1, quiet_zone=0)[0]
         # Create a template matrix we will build the codes with
-        row = [' ' for x in range(matrix_size)]
-        template = [list(row) for x in range(matrix_size)]
-        # Add mandatory information to the template
-        QRCodeBuilder.add_detection_pattern(template)
-        self.add_position_pattern(template)
-        self.add_version_pattern(template)
-        # Create the various types of masks of the template
-        self.masks = self.make_masks(template)
-        self.best_mask = self.choose_best_mask()
-        self.code = self.masks[self.best_mask]
+        row = [None for x in range(matrix_size)]
+        matrix = [list(row) for x in range(matrix_size)]
+        # Add mandatory information to the matrix
+        QRCodeBuilder.add_detection_pattern(matrix)
+        QRCodeBuilder.add_position_pattern(matrix, self.version)
+        QRCodeBuilder.add_version_pattern(matrix, self.version)
+        # Create the various types of masks of the matrix
+        masks = QRCodeBuilder.make_masks(matrix, self.buffer.getvalue(), self.error)
+        best_mask = QRCodeBuilder.choose_best_mask(masks)
+        self.code = masks[best_mask]
 
     @staticmethod
-    def add_detection_pattern(m):
+    def add_detection_pattern(matrix):
         """This method add the detection patterns to the QR code. This lets
         the scanner orient the pattern. It is required for all QR codes.
         The detection pattern consists of three boxes located at the upper
@@ -629,152 +624,154 @@ class QRCodeBuilder:
         """
         # Draw outer black box
         for i in range(7):
-            inv = -(i+1)
-            for j in [0,6,-1,-7]:
-                m[j][i] = 1
-                m[i][j] = 1
-                m[inv][j] = 1
-                m[j][inv] = 1
+            inv = -(i + 1)
+            for j in (0, 6, -1, -7):
+                matrix[j][i] = 1
+                matrix[i][j] = 1
+                matrix[inv][j] = 1
+                matrix[j][inv] = 1
         # Draw inner white box
         for i in range(1, 6):
-            inv = -(i+1)
-            for j in [1, 5, -2, -6]:
-                m[j][i] = 0
-                m[i][j] = 0
-                m[inv][j] = 0
-                m[j][inv] = 0
+            inv = -(i + 1)
+            for j in (1, 5, -2, -6):
+                matrix[j][i] = 0
+                matrix[i][j] = 0
+                matrix[inv][j] = 0
+                matrix[j][inv] = 0
         # Draw inner black box
         for i in range(2, 5):
             for j in range(2, 5):
-                inv = -(i+1)
-                m[i][j] = 1
-                m[inv][j] = 1
-                m[j][inv] = 1
+                inv = -(i + 1)
+                matrix[i][j] = 1
+                matrix[inv][j] = 1
+                matrix[j][inv] = 1
         # Draw white border
         for i in range(8):
-            inv = -(i+1)
-            for j in [7, -8]:
-                m[i][j] = 0
-                m[j][i] = 0
-                m[inv][j] = 0
-                m[j][inv] = 0
+            inv = -(i + 1)
+            for j in (7, -8):
+                matrix[i][j] = 0
+                matrix[j][i] = 0
+                matrix[inv][j] = 0
+                matrix[j][inv] = 0
         # To keep the code short, it draws an extra box
         # in the lower right corner, this removes it.
         for i in range(-8, 0):
             for j in range(-8, 0):
-                m[i][j] = ' '
+                matrix[i][j] = None
         # Add the timing pattern
         bit = itertools.cycle([1,0])
-        for i in range(8, (len(m)-8)):
+        for i in range(8, (len(matrix) - 8)):
             b = next(bit)
-            m[i][6] = b
-            m[6][i] = b
+            matrix[i][6] = b
+            matrix[6][i] = b
         # Add the extra black pixel
-        m[-8][8] = 1
+        matrix[-8][8] = 1
 
-    def add_position_pattern(self, m):
+    @staticmethod
+    def add_position_pattern(matrix, version):
         """This method draws the position adjustment patterns onto the QR
         Code. All QR code versions larger than one require these special boxes
         called position adjustment patterns.
         """
         # Version 1 does not have a position adjustment pattern
-        if self.version == 1:
+        if version == 1:
             return
         # Get the coordinates for where to place the boxes
-        coordinates = tables.position_adjustment[self.version]
+        coordinates = tables.position_adjustment[version]
         # Get the max and min coordinates to handle special cases
         min_coord = coordinates[0]
         max_coord = coordinates[-1]
         # Draw a box at each intersection of the coordinates
-        for i in coordinates:
-            for j in coordinates:
-                # Do not draw these boxes because they would
-                # interfere with the detection pattern
-                if (i == min_coord and j == min_coord) or \
-                   (i == min_coord and j == max_coord) or \
-                   (i == max_coord and j == min_coord):
-                    continue
-                # Center black pixel
-                m[i][j] = 1
-                # Surround the pixel with a white box
-                for x in [-1,1]:
-                    m[i+x][j+x] = 0
-                    m[i+x][j] = 0
-                    m[i][j+x] = 0
-                    m[i-x][j+x] = 0
-                    m[i+x][j-x] = 0
-                # Surround the white box with a black box
-                for x in [-2,2]:
-                    for y in [0,-1,1]:
-                        m[i+x][j+x] = 1
-                        m[i+x][j+y] = 1
-                        m[i+y][j+x] = 1
-                        m[i-x][j+x] = 1
-                        m[i+x][j-x] = 1
+        for i, j in ((i, j) for i in coordinates for j in coordinates):
+            # Do not draw these boxes because they would
+            # interfere with the detection pattern
+            if (i == min_coord and j == min_coord) or \
+               (i == min_coord and j == max_coord) or \
+               (i == max_coord and j == min_coord):
+                continue
+            # Center black pixel
+            matrix[i][j] = 1
+            # Surround the pixel with a white box
+            for x in (-1, 1):
+                matrix[i + x][j + x] = 0
+                matrix[i + x][j] = 0
+                matrix[i][j + x] = 0
+                matrix[i - x][j + x] = 0
+                matrix[i + x][j - x] = 0
+            # Surround the white box with a black box
+            for x in (-2, 2):
+                for y in (0, -1, 1):
+                    matrix[i + x][j + x] = 1
+                    matrix[i + x][j + y] = 1
+                    matrix[i + y][j + x] = 1
+                    matrix[i - x][j + x] = 1
+                    matrix[i + x][j - x] = 1
 
-    def add_version_pattern(self, m):
+    @staticmethod
+    def add_version_pattern(matrix, version):
         """For QR codes with a version 7 or higher, a special pattern
         specifying the code's version is required.
 
         For further information see:
         http://www.thonky.com/qr-code-tutorial/format-version-information/# example-of-version-7-information-string
         """
-        if self.version < 7:
+        if version < 7:
             return
         # Get the bit fields for this code's version
         # We will iterate across the string, the bit string
         # needs the least significant digit in the zero-th position
-        field = iter(tables.version_pattern[self.version][::-1])
+        field = iter(tables.version_pattern[version][::-1])
         # Where to start placing the pattern
-        start = len(m)-11
+        start = len(matrix) - 11
         # The version pattern is pretty odd looking
         for i in range(6):
             # The pattern is three modules wide
-            for j in range(start, start+3):
+            for j in range(start, start + 3):
                 bit = int(next(field))
                 # Bottom Left
-                m[i][j] = bit
+                matrix[i][j] = bit
                 # Upper right
-                m[j][i] = bit
+                matrix[j][i] = bit
 
-    def make_masks(self, template):
+    @staticmethod
+    def make_masks(matrix, data, error):
         """This method generates all seven masks so that the best mask can
         be determined. The template parameter is a code matrix that will
         server as the base for all the generated masks.
         """
-        nmasks = len(tables.mask_patterns)
-        masks = [''] * nmasks
-        for n in range(nmasks):
-            cur_mask = [list(row) for row in template]
-            masks[n] = cur_mask
+        masks = []
+        matrix_size = len(matrix)
+        for n, pattern in enumerate(tables.mask_patterns):
+            cur_mask = [list(row) for row in matrix]
+            masks.append(cur_mask)
             # Add the type pattern bits to the code
-            QRCodeBuilder.add_type_pattern(cur_mask, tables.type_bits[self.error][n])
+            QRCodeBuilder.add_type_pattern(cur_mask, tables.type_bits[error][n])
             # Get the mask pattern
-            pattern = tables.mask_patterns[n]
             # This will read the 1's and 0's one at a time
-            bits = iter(self.buffer.getvalue())
+            bits = iter(data)
             # These will help us do the up, down, up, down pattern
-            row_start = itertools.cycle([len(cur_mask) - 1, 0])
-            row_stop = itertools.cycle([-1, len(cur_mask)])
+            row_start = itertools.cycle([matrix_size - 1, 0])
+            row_stop = itertools.cycle([-1, matrix_size])
             direction = itertools.cycle([-1, 1])
             # The data pattern is added using pairs of columns
-            for column in range(len(cur_mask) - 1, 0, -2):
+            for column in range(matrix_size - 1, 0, -2):
                 # The vertical timing pattern is an exception to the rules,
                 # move the column counter over by one
                 if column <= 6:
                     column -= 1
                 # This will let us fill in the pattern
                 # right-left, right-left, etc.
-                column_pair = itertools.cycle([column, column-1])
+                column_pair = itertools.cycle([column, column - 1])
                 # Go through each row in the pattern moving up, then down
-                for row in range(next(row_start), next(row_stop),
+                for i in range(next(row_start), next(row_stop),
                                  next(direction)):
+                    row = cur_mask[i]
                     # Fill in the right then left column
-                    for i in range(2):
-                        col = next(column_pair)
+                    for x in range(2):
+                        j = next(column_pair)
                         # Go to the next column if we encounter a
                         # preexisting pattern (usually an alignment pattern)
-                        if cur_mask[row][col] != ' ':
+                        if row[j] is not None:
                             continue
                         # Some versions don't have enough bits. You then fill
                         # in the rest of the pattern with 0's. These are
@@ -784,80 +781,81 @@ class QRCodeBuilder:
                         except:
                             bit = 0
                         # If the pattern is True then flip the bit
-                        if pattern(row, col):
-                            cur_mask[row][col] = bit ^ 1
+                        if pattern(i, j):
+                            cur_mask[i][j] = bit ^ 1
                         else:
-                            cur_mask[row][col] = bit
+                            cur_mask[i][j] = bit
         return masks
 
-    def choose_best_mask(self):
+    @staticmethod
+    def choose_best_mask(masks):
         """This method returns the index of the "best" mask as defined by
         having the lowest total penalty score. The penalty rules are defined
         by the standard. The mask with the lowest total score should be the
         easiest to read by optical scanners.
         """
-        self.scores = [[0, 0, 0, 0] for n in range(len(self.masks))]
-        # Score penalty rule number 1
-        # Look for five consecutive squares with the same color.
-        # Each one found gets a penalty of 3 + 1 for every
-        # same color square after the first five in the row.
-        for n, mask in enumerate(self.masks):
-            current = mask[0][0]
-            total = 0
+        scores = []
+        matrix_size = len(masks[0])
+        patterns = ((0,0,0,0,1,0,1,1,1,0,1),
+                    (1,0,1,1,1,0,1,0,0,0,0))
+        matrix_range = range(matrix_size)
+        for mask in masks:
+            # Score penalty rule number 1
+            # Look for five consecutive squares with the same color.
+            # Each one found gets a penalty of 3 + 1 for every
+            # same color square after the first five in the row.
+            pr1 = 0
             # Examine the mask row wise
-            for row in range(0, len(mask)):
+            for i in matrix_range:
                 counter = 0
-                for col  in range(0, len(mask)):
-                    bit = mask[row][col]
+                current = -1
+                row = mask[i]
+                for j in matrix_range:
+                    bit = row[j]
                     if bit == current:
                         counter += 1
                     else:
                         if counter >= 5:
-                            total += (counter - 5) + 3
+                            pr1 += (counter - 5) + 3
                         counter = 1
                         current = bit
                 if counter >= 5:
-                    total += (counter - 5) + 3
+                    pr1 += (counter - 5) + 3
             # Examine the mask column wise
-            for col in range(0, len(mask)):
+            for j in matrix_range:
                 counter = 0
-                for row in range(0, len(mask)):
-                    bit = mask[row][col]
+                current = -1
+                for i in matrix_range:
+                    bit = mask[j][i]
                     if bit == current:
                         counter += 1
                     else:
                         if counter >= 5:
-                            total += (counter - 5) + 3
+                            pr1 += (counter - 5) + 3
                         counter = 1
                         current = bit
                 if counter >= 5:
-                    total += (counter - 5) + 3
-            self.scores[n][0] = total
+                    pr1 += (counter - 5) + 3
 
-        # Score penalty rule 2
-        # This rule will add 3 to the score for each 2x2 block of the same
-        # colored pixels there are.
-        for n, mask in enumerate(self.masks):
-            count = 0
+            # Score penalty rule 2
+            # This rule will add 3 to the score for each 2x2 block of the same
+            # colored pixels there are.
+            pr2 = 0
             # Don't examine the 0th and Nth row/column
-            for i in range(0, len(mask)-1):
-                for j in range(0, len(mask)-1):
-                    if mask[i][j] == mask[i+1][j]   and \
-                       mask[i][j] == mask[i][j+1]   and \
-                       mask[i][j] == mask[i+1][j+1]:
-                        count += 1
-            self.scores[n][1] = count * 3
+            for i in range(matrix_size - 1):
+                row = mask[i]
+                for j in range(matrix_size - 1):
+                    if row[j] == mask[i + 1][j] and \
+                       row[j] == mask[i][j + 1] and \
+                       row[j] == mask[i + 1][j + 1]:
+                        pr2 += 3
 
-        # Score penalty rule 3
-        # This rule looks for 1011101 within the mask prefixed
-        # and/or suffixed by four zeros.
-        patterns = [[0,0,0,0,1,0,1,1,1,0,1],
-                    [1,0,1,1,1,0,1,0,0,0,0],]
-                    #[0,0,0,0,1,0,1,1,1,0,1,0,0,0,0]]
-        for n, mask in enumerate(self.masks):
-            nmatches = 0
-            for i in range(len(mask)):
-                for j in range(len(mask)):
+            # Score penalty rule 3
+            # This rule looks for 1011101 within the mask prefixed
+            # and/or suffixed by four zeros.
+            pr3 = 0
+            for i in matrix_range:
+                for j in matrix_range:
                     for pattern in patterns:
                         match = True
                         k = j
@@ -868,7 +866,7 @@ class QRCodeBuilder:
                                 break
                             k += 1
                         if match:
-                            nmatches += 1
+                            pr3 += 1
                         match = True
                         k = j
                         # Look for column matches
@@ -878,29 +876,21 @@ class QRCodeBuilder:
                                 break
                             k += 1
                         if match:
-                            nmatches += 1
-            self.scores[n][2] = nmatches * 40
-        # Score the last rule, penalty rule 4. This rule measures how close
-        # the pattern is to being 50% black. The further it deviates from
-        # this this ideal the higher the penalty.
-        for n, mask in enumerate(self.masks):
-            nblack = 0
-            for row in mask:
-                nblack += sum(row)
-            total_pixels = len(mask) ** 2
-            ratio = nblack / total_pixels
-            percent = (ratio * 100) - 50
-            self.scores[n][3] = int((abs(int(percent)) / 5) * 10)
+                            pr3 += 1
+            pr3 *= 40
+            # Score the last rule, penalty rule 4. This rule measures how close
+            # the pattern is to being 50% black. The further it deviates from
+            # this this ideal the higher the penalty.
+            percent = float(sum(map(sum, mask))) / (matrix_size ** 2)
+            pr4 = 10 * int(abs(percent * 100 - 50) / 5)  # N4 = 10
+            scores.append((pr1, pr2, pr3, pr4))
         # Calculate the total for each score
-        totals = [0] * len(self.scores)
-        for i in range(len(self.scores)):
-            for j in range(len(self.scores[i])):
-                totals[i] +=  self.scores[i][j]
+        totals = tuple(map(sum, scores))
         # The lowest total wins
         return totals.index(min(totals))
 
     @staticmethod
-    def add_type_pattern(m, type_bits):
+    def add_type_pattern(matrix, type_bits):
         """This will add the pattern to the QR code that represents the error
         level and the type of mask used to make the code.
         """
@@ -909,20 +899,20 @@ class QRCodeBuilder:
             bit = int(next(field))
             # Skip the timing bits
             if i < 6:
-                m[8][i] = bit
+                matrix[8][i] = bit
             else:
-                m[8][i+1] = bit
-            if -8 < -(i+1):
-                m[-(i+1)][8] = bit
-        for i in range(-8,0):
+                matrix[8][i + 1] = bit
+            if -8 < -(i + 1):
+                matrix[-(i + 1)][8] = bit
+        for i in range(-8, 0):
             bit = int(next(field))
-            m[8][i] = bit
+            matrix[8][i] = bit
             i = -i
             # Skip timing column
             if i > 6:
-                m[i][8] = bit
+                matrix[i][8] = bit
             else:
-                m[i-1][8] = bit
+                matrix[i - 1][8] = bit
 
 
 def _get_symbol_size(version, scale, quiet_zone=4):
@@ -1262,7 +1252,6 @@ def _eps(code, version, file_or_path, scale=1, module_color=(0, 0, 0),
             (default: ``4``). Set to zero (``0``) if the code shouldn't
             have a border.
     """
-    from functools import partial
     import time
     import textwrap
 
@@ -1468,3 +1457,112 @@ def _terminal_win(code, version, quiet_zone=None):  # pragma: no cover
             write('  ' * cnt)
         set_color(default_color)  # reset color
         write('\n')
+
+
+
+def _terminal_deprecated(code, module_color='default', background='reverse', quiet_zone=4):
+    """This method returns a string containing ASCII escape codes,
+    such that if printed to a terminal, it will display a vaild
+    QR code. The module_color and the background color should be keys
+    in the tables.term_colors table for printing using the 8/16
+    color scheme. Alternatively, they can be a number between 0 and
+    256 in order to use the 88/256 color scheme. Otherwise, a
+    ValueError will be raised.
+    Note, the code is outputted by changing the background color. Then
+    two spaces are written to the terminal. Finally, the terminal is
+    reset back to how it was.
+    """
+    buf = io.StringIO()
+
+    #: This is a table of ASCII escape code for terminal colors. QR codes
+    #: are drawn using a space with a colored background. Hence, only
+    #: codes affecting background colors have been added.
+    #: http://misc.flogisoft.com/bash/tip_colors_and_formatting
+    term_colors = {
+        'default': 49,
+        'background': 49,
+
+        'reverse': 7,
+        'reversed': 7,
+        'inverse': 7,
+        'inverted': 7,
+
+        'black': 40,
+        'red': 41,
+        'green': 42,
+        'yellow': 43,
+        'blue': 44,
+        'magenta': 45,
+        'cyan': 46,
+        'light gray': 47,
+        'light grey': 47,
+        'dark gray': 100,
+        'dark grey': 100,
+        'light red': 101,
+        'light green': 102,
+        'light blue': 103,
+        'light yellow': 104,
+        'light magenta': 105,
+        'light cyan': 106,
+        'white': 107
+    }
+
+    def draw_border():
+        for i in range(quiet_zone):
+            buf.write(background)
+
+    if module_color in term_colors:
+        data = '\033[{0}m  \033[0m'.format(
+            term_colors[module_color])
+    elif 0 <= module_color <= 256:
+        data = '\033[48;5;{0}m  \033[0m'.format(module_color)
+    else:
+        raise ValueError('The module color, {0}, must a key in '
+                         'pyqrcode.tables.term_colors or a number '
+                         'between 0 and 256.'.format(
+                         module_color))
+
+    if background in term_colors:
+        background = '\033[{0}m  \033[0m'.format(term_colors[background])
+    elif 0 <= background <= 256:
+        background = '\033[48;5;{0}m  \033[0m'.format(background)
+    else:
+        raise ValueError('The background color, {0}, must a key in '
+                         'pyqrcode.tables.term_colors or a number '
+                         'between 0 and 256.'.format(
+                         background))
+
+    #This will be the beginning and ending row for the code.
+    border_row = background * (len(code[0]) + (2 * quiet_zone))
+
+    #Make sure we begin on a new line, and force the terminal back
+    #to normal
+    buf.write('\n')
+
+    #QRCodes have a quiet zone consisting of background modules
+    for i in range(quiet_zone):
+        buf.write(border_row)
+        buf.write('\n')
+
+    for row in code:
+        #Each code has a quiet zone on the left side, this is the left
+        #border for this code
+        draw_border()
+
+        for bit in row:
+            if bit == 1:
+                buf.write(data)
+            elif bit == 0:
+                buf.write(background)
+
+        #Each row ends with a quiet zone on the right side, this is the
+        #right hand border background modules
+        draw_border()
+        buf.write('\n')
+
+    #QRCodes have a background quiet zone row following the code
+    for i in range(quiet_zone):
+        buf.write(border_row)
+        buf.write('\n')
+
+    return buf.getvalue()

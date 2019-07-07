@@ -9,8 +9,8 @@
 as possible. It does this by using sane defaults and autodetection to make
 creating a QR Code very simple.
 
-It is recommended that you use the :func:`pyqrcode.create` function to build the
-QRCode object. This results in cleaner looking code.
+It is recommended that you use the :func:`pyqrcodeng.create` function to build
+the :class:`QRCode` object. This results in cleaner looking code.
 
 Examples:
         >>> import pyqrcodeng
@@ -181,7 +181,7 @@ class QRCode:
 
     def get_png_size(self, scale=1, quiet_zone=4):
         """
-        DEPRECATED, use symbol_size()
+        DEPRECATED, use :meth:`pyqrcodeng.QRCode.symbol_size()`
 
         This is method helps users determine what *scale* to use when
         creating a PNG of this QR code. It is meant mostly to be used in the
@@ -275,7 +275,8 @@ class QRCode:
 
     def png_as_base64_str(self, scale=1, module_color=(0, 0, 0, 255),
                           background=(255, 255, 255, 255), quiet_zone=4):
-        """DEPRECATED, use png_data_uri()
+        """DEPRECATED, use :meth:`pyqrcodeng.QRCode.png_data_uri`.
+
         This method uses the png render and returns the PNG image encoded as
         base64 string. This can be useful for creating dynamic PNG images for
         web development, since no file needs to be created.
@@ -306,7 +307,8 @@ class QRCode:
         """\
         Converts the QR Code into a PNG data URI.
 
-        Uses the same keyword parameters as the usual PNG serializer.
+        Uses the same keyword parameters as the usual PNG serializer,
+        see :py:meth:`QRCode.png` for details.
 
         :rtype: str
         """
@@ -451,7 +453,7 @@ class QRCode:
 
     def terminal(self, module_color='default', background='reverse',
                  quiet_zone=4):
-        """DEPRECATED, use term()
+        """DEPRECATED, use :meth:`term`
 
         This method returns a string containing ASCII escape codes,
         such that if printed to a compatible terminal, it will display

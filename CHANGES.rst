@@ -1,6 +1,14 @@
 Changes
 =======
 
+1.3.4 - 2019-07-dd
+------------------
+* Improved documentation
+* Internal code refactoring
+* Added CLI docs
+* (Deprecated) QRCode.terminal() did not work. Fixed.
+
+
 1.3.3 - 2019-06-30
 ------------------
 * Improved documentation

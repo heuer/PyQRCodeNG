@@ -1,7 +1,7 @@
 Changes
 =======
 
-1.3.4 - 2019-07-dd
+1.3.4 - 2019-07-07
 ------------------
 * Improved documentation
 * Internal code refactoring

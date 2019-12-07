@@ -70,46 +70,51 @@ class QRCodeBuilder:
     def __init__(self, content, version, mode, error, encoding=None):
         """See :py:class:`pyqrcode.QRCode` for information on the parameters."""
 
-        # Guess the mode of the code, this will also be used for
-        # error checking
-        guessed_content_type, guessed_encoding = QRCodeBuilder._detect_content_type(content, encoding)
-
-        if isinstance(content, int):
-            content = str(content)
-
-        encoding_provided = encoding is not None
-        if not encoding_provided:
-            encoding = 'iso-8859-1' if guessed_encoding is None else guessed_encoding
-
-        # Store the encoding for use later
-        if guessed_content_type == 'kanji':
-            self.encoding = 'shiftjis'
-        else:
-            self.encoding = encoding
-
         if version is not None:
             if 1 <= version <= 40:
                 self.version = version
             else:
                 raise ValueError("Illegal version {0}, version must be between "
-                                 "1 and 40.".format(version))
-        # Decode a 'byte array' contents into a string format
-        if isinstance(content, bytes):
-            self.data = content.decode(encoding)
-        # Give a string an encoding
-        elif hasattr(content, 'encode'):
-            try:
-                self.data = content.encode(self.encoding)
-            except UnicodeEncodeError as ex:
-                if not encoding_provided:
-                    self.encoding = 'utf-8'
-                    self.data = content.encode(self.encoding)
-                else:
-                    raise ex
+                                "1 and 40.".format(version))
+
+        # Guess the mode of the code, this will also be used for
+        # error checking
+        guessed_content_type, guessed_encoding = QRCodeBuilder._detect_content_type(content, encoding)
+
+        if mode == 'binary' and isinstance(content, bytes):
+            self.data = content
+            self.encoding = None
         else:
-            # The contents are not a byte array or string, so
-            # try naively converting to a string representation.
-            self.data = str(content)  # str == unicode in Py 2.x, see file head
+            if isinstance(content, int):
+                content = str(content)
+
+            encoding_provided = encoding is not None
+            if not encoding_provided:
+                encoding = 'iso-8859-1' if guessed_encoding is None else guessed_encoding
+
+            # Store the encoding for use later
+            if guessed_content_type == 'kanji':
+                self.encoding = 'shiftjis'
+            else:
+                self.encoding = encoding
+
+            # Decode a 'byte array' contents into a string format
+            if isinstance(content, bytes):
+                self.data = content.decode(encoding)
+            # Give a string an encoding
+            elif hasattr(content, 'encode'):
+                try:
+                    self.data = content.encode(self.encoding)
+                except UnicodeEncodeError as ex:
+                    if not encoding_provided:
+                        self.encoding = 'utf-8'
+                        self.data = content.encode(self.encoding)
+                    else:
+                        raise ex
+            else:
+                # The contents are not a byte array or string, so
+                # try naively converting to a string representation.
+                self.data = str(content)  # str == unicode in Py 2.x, see file head
 
         if mode is None:
             # Use the guessed mode

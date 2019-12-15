@@ -173,6 +173,13 @@ def test_invalid_ecc():
         pyqrcode.create('test', error='R')
 
 
+def test_forced_binary():
+    data = 'Émetteur'.encode('iso-8859-15')
+    qr = pyqrcode.create(data, mode='binary')
+    assert qr.data == data
+    assert qr.mode == 'binary'
+
+
 if __name__ == '__main__':
     import pytest
     pytest.main([__file__])

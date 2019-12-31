@@ -15,7 +15,7 @@ def test_version_too_small():
 
 def test_version_and_error_provided():
     # QR Code version 1-L: Max. 25 alphanumeric chars
-    qr = pyqrcode.create('A' * 25, version=1)
+    qr = pyqrcode.create('A' * 25, version=1, error='l')
     assert 1 == qr.version
     assert 'L' == qr.error
 

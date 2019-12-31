@@ -1,6 +1,13 @@
 Changes
 =======
 
+1.3.5 - 2020-mm-dd
+------------------
+* Don't raise a UnicodeError if the user provided binary data and sets
+  the mode explicitly to 'binary'.
+  Fixed by Mathieu <https://github.com/albatros69> (PR #13)
+
+
 1.3.4 - 2019-07-07
 ------------------
 * Improved documentation

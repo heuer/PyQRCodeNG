@@ -763,8 +763,7 @@ class QRCodeBuilder:
                 # right-left, right-left, etc.
                 column_pair = itertools.cycle([column, column - 1])
                 # Go through each row in the pattern moving up, then down
-                for i in range(next(row_start), next(row_stop),
-                                 next(direction)):
+                for i in range(next(row_start), next(row_stop), next(direction)):
                     row = cur_mask[i]
                     # Fill in the right then left column
                     for x in range(2):
@@ -781,10 +780,7 @@ class QRCodeBuilder:
                         except:
                             bit = 0
                         # If the pattern is True then flip the bit
-                        if pattern(i, j):
-                            cur_mask[i][j] = bit ^ 1
-                        else:
-                            cur_mask[i][j] = bit
+                        row[j] = bit ^ pattern(i, j)
         return masks
 
     @staticmethod

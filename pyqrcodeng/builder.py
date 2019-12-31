@@ -609,10 +609,13 @@ class QRCodeBuilder:
         # Create a template matrix we will build the codes with
         row = [None for x in range(matrix_size)]
         matrix = [list(row) for x in range(matrix_size)]
+        # Add the dark module
+        matrix[-8][8] = 1
         # Add mandatory information to the matrix
-        QRCodeBuilder.add_detection_pattern(matrix)
-        QRCodeBuilder.add_position_pattern(matrix, self.version)
+        QRCodeBuilder.add_finder_patterns(matrix)
+        QRCodeBuilder.add_alignment_patterns(matrix, self.version)
         QRCodeBuilder.add_version_pattern(matrix, self.version)
+        QRCodeBuilder.add_timing_pattern(matrix)
         # Create the various types of masks of the matrix
         masks = QRCodeBuilder.make_masks(matrix, self.buffer.getvalue(), self.error)
         best_mask = QRCodeBuilder.choose_best_mask(masks)
@@ -620,41 +623,53 @@ class QRCodeBuilder:
 
     @staticmethod
     def add_detection_pattern(matrix):
-        """This method add the detection patterns to the QR code. This lets
+        import warnings
+        warnings.warn('Deprecated since 1.3.5, use add_finder_patterns', DeprecationWarning)
+        QRCodeBuilder.add_finder_patterns(matrix)
+        # Add the dark module
+        matrix[-8][8] = 1
+        # Add timing pattern
+        QRCodeBuilder.add_timing_pattern(matrix)
+
+    @staticmethod
+    def add_finder_patterns(matrix):
+        """This method adds the finder patterns to the QR code. This lets
         the scanner orient the pattern. It is required for all QR codes.
-        The detection pattern consists of three boxes located at the upper
-        left, upper right, and lower left corners of the matrix. Also, two
-        special lines called the timing pattern is also necessary. Finally,
-        a single black pixel is added just above the lower left black box.
+        The finder pattern consists of three boxes located at the upper
+        left, upper right, and lower left corners of the matrix.
         """
         # Draw outer black box
         for i in range(7):
             inv = -(i + 1)
             for j in (0, 6, -1, -7):
-                matrix[j][i] = 1
+                row = matrix[j]
+                row[i] = 1
                 matrix[i][j] = 1
                 matrix[inv][j] = 1
-                matrix[j][inv] = 1
+                row[inv] = 1
         # Draw inner white box
         for i in range(1, 6):
             inv = -(i + 1)
             for j in (1, 5, -2, -6):
-                matrix[j][i] = 0
+                row = matrix[j]
+                row[i] = 0
                 matrix[i][j] = 0
                 matrix[inv][j] = 0
-                matrix[j][inv] = 0
+                row[inv] = 0
         # Draw inner black box
         for i in range(2, 5):
+            row = matrix[i]
             for j in range(2, 5):
                 inv = -(i + 1)
-                matrix[i][j] = 1
+                row[j] = 1
                 matrix[inv][j] = 1
                 matrix[j][inv] = 1
         # Draw white border
         for i in range(8):
             inv = -(i + 1)
+            row = matrix[i]
             for j in (7, -8):
-                matrix[i][j] = 0
+                row[j] = 0
                 matrix[j][i] = 0
                 matrix[inv][j] = 0
                 matrix[j][inv] = 0
@@ -663,20 +678,29 @@ class QRCodeBuilder:
         for i in range(-8, 0):
             for j in range(-8, 0):
                 matrix[i][j] = None
+
+    @staticmethod
+    def add_timing_pattern(matrix):
+        """Adds the timing pattern
+        """
         # Add the timing pattern
         bit = itertools.cycle([1,0])
         for i in range(8, (len(matrix) - 8)):
             b = next(bit)
             matrix[i][6] = b
             matrix[6][i] = b
-        # Add the extra black pixel
-        matrix[-8][8] = 1
 
     @staticmethod
     def add_position_pattern(matrix, version):
-        """This method draws the position adjustment patterns onto the QR
+        import warnings
+        warnings.warn('Deprecated since 1.3.5, use add_alignment_patterns', DeprecationWarning)
+        QRCodeBuilder.add_alignment_patterns(matrix, version)
+
+    @staticmethod
+    def add_alignment_patterns(matrix, version):
+        """This method draws the alignment patterns onto the QR
         Code. All QR code versions larger than one require these special boxes
-        called position adjustment patterns.
+        called position alignment patterns.
         """
         # Version 1 does not have a position adjustment pattern
         if version == 1:
@@ -694,13 +718,14 @@ class QRCodeBuilder:
                (i == min_coord and j == max_coord) or \
                (i == max_coord and j == min_coord):
                 continue
+            row = matrix[i]
             # Center black pixel
-            matrix[i][j] = 1
+            row[j] = 1
             # Surround the pixel with a white box
             for x in (-1, 1):
                 matrix[i + x][j + x] = 0
                 matrix[i + x][j] = 0
-                matrix[i][j + x] = 0
+                row[j + x] = 0
                 matrix[i - x][j + x] = 0
                 matrix[i + x][j - x] = 0
             # Surround the white box with a black box
@@ -730,11 +755,12 @@ class QRCodeBuilder:
         start = len(matrix) - 11
         # The version pattern is pretty odd looking
         for i in range(6):
+            row = matrix[i]
             # The pattern is three modules wide
             for j in range(start, start + 3):
                 bit = int(next(field))
                 # Bottom Left
-                matrix[i][j] = bit
+                row[j] = bit
                 # Upper right
                 matrix[j][i] = bit
 

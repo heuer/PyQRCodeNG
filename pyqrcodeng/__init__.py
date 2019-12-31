@@ -25,7 +25,6 @@ from __future__ import absolute_import, division, print_function, with_statement
 import sys
 import io
 import base64
-import pyqrcodeng.tables
 import pyqrcodeng.builder as builder
 try:  # pragma: no cover
     str = unicode  # Python 2
@@ -164,12 +163,12 @@ class QRCode:
         import tempfile
         import webbrowser
  
-        try:  # Python 2
-            from urlparse import urljoin
-            from urllib import pathname2url
-        except ImportError:  # Python 3
+        try:  # Python 3
             from urllib.parse import urljoin
             from urllib.request import pathname2url
+        except ImportError:  # Python 2
+            from urlparse import urljoin
+            from urllib import pathname2url
 
         f = tempfile.NamedTemporaryFile('wb', suffix='.png', delete=False)
         self.png(f, scale=scale, module_color=module_color,

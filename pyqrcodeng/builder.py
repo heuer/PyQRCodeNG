@@ -1186,7 +1186,13 @@ def _png(code, version, file, scale=1, module_color=(0, 0, 0, 255),
                 yield bit
 
     def png_row(row):
-        row = tuple(row)
+        """\
+        This yields a 'packed' row.
+        This should be much faster in conjunction with png.Writer.write_packed
+        especially if the scaling factor is > 1 since the row must be packed
+        only once.
+        """
+        row = tuple(png.pack_rows([row], 1))[0]
         for i in scale_range:
             yield row
 
@@ -1238,7 +1244,7 @@ def _png(code, version, file, scale=1, module_color=(0, 0, 0, 255),
                    transparent=transparent_color, palette=palette,
                    bitdepth=1)
     with _writable(file, 'wb') as f:
-        w.write_passes(f, chain.from_iterable(map(png_row, (map(png_bits, _matrix_iter(code, version,
+        w.write_packed(f, chain.from_iterable(map(png_row, (map(png_bits, _matrix_iter(code, version,
                                                             scale=1,
                                                             quiet_zone=quiet_zone))))))
 

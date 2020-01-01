@@ -335,15 +335,16 @@ class QRCodeBuilder:
         # Change the data such that it uses a QR code ascii table
         to_byte = tables.ALPHANUMERIC_CHARS.find
         ascii_data = map(to_byte, self.data)
+        binary_str = QRCodeBuilder.binary_string
         # Now perform the algorithm that will make the ascii into bit fields
         with io.StringIO() as buf:
             for a, b in QRCodeBuilder.grouper(2, ascii_data, fillvalue=None):
                 if b is not None:
-                    buf.write(QRCodeBuilder.binary_string(45 * a + b, 11))
+                    buf.write(binary_str(45 * a + b, 11))
                 else:
                     # This occurs when there is an odd number
                     # of characters in the data
-                    buf.write(QRCodeBuilder.binary_string(a, 6))
+                    buf.write(binary_str(a, 6))
             # Return the binary string
             return buf.getvalue()
 
@@ -351,38 +352,25 @@ class QRCodeBuilder:
         """This method encodes the QR code's data if its mode is
         numeric. It returns the data encoded as a binary string.
         """
+        data = self.data
+        binary_str = QRCodeBuilder.binary_string
         with io.StringIO() as buf:
             # Break the number into groups of three digits
-            for triplet in QRCodeBuilder.grouper(3, self.data):
-                number = ''
-                for digit in triplet:
-                    if isinstance(digit, int):
-                        digit = chr(digit)
-                    # Only build the string if digit is not None
-                    if digit:
-                        number = ''.join([number, digit])
-                    else:
-                        break
-                # If the number is one digits, make a 4 bit field
-                if len(number) == 1:
-                    bin = QRCodeBuilder.binary_string(number, 4)
-                elif len(number) == 2:  # If the number is two digits, make a 7 bit field
-                    bin = QRCodeBuilder.binary_string(number, 7)
-                else:  # Three digit numbers use a 10 bit field
-                    bin = QRCodeBuilder.binary_string(number, 10)
-                buf.write(bin)
+            for i in range(0, len(data), 3):
+                chunk = data[i:i + 3]
+                buf.write(binary_str(chunk, len(chunk) * 3 + 1))
             return buf.getvalue()
 
     def encode_bytes(self):
         """This method encodes the QR code's data if its mode is
         8 bit mode. It returns the data encoded as a binary string.
         """
+        binary_str = QRCodeBuilder.binary_string
         with io.StringIO() as buf:
             for char in self.data:
                 if not isinstance(char, int):
-                    buf.write('{{0:0{0}b}}'.format(8).format(ord(char)))
-                else:
-                    buf.write('{{0:0{0}b}}'.format(8).format(char))
+                    char = ord(char)
+                buf.write(binary_str(char, 8))
             return buf.getvalue()
 
     def encode_kanji(self):

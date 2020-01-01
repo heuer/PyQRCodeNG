@@ -38,7 +38,7 @@ __all__ = ('create', 'QRCode', 'DataOverflowError', 'VersionError', 'MaskError',
 # <https://wiki.python.org/moin/PortingToPy3k/BilingualQuickRef#New_Style_Classes>
 __metaclass__ = type
 
-__version__ = '1.3.5'
+__version__ = '1.3.6'
 
 
 def create(content, error='H', version=None, mode=None, encoding=None):

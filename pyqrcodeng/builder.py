@@ -32,10 +32,10 @@ except ImportError:  # pragma: no cover
     str = unicode
     open = io.open
 _PYPNG_AVAILABLE = False
-try:
+try:  # pragma: no cover
     import png
     _PYPNG_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     pass
 
 _ALPHANUMERIC_PATTERN = re.compile(br'^[' + re.escape(tables.ALPHANUMERIC_CHARS) + br']+\Z')
@@ -335,15 +335,16 @@ class QRCodeBuilder:
         # Change the data such that it uses a QR code ascii table
         to_byte = tables.ALPHANUMERIC_CHARS.find
         ascii_data = map(to_byte, self.data)
+        binary_str = QRCodeBuilder.binary_string
         # Now perform the algorithm that will make the ascii into bit fields
         with io.StringIO() as buf:
             for a, b in QRCodeBuilder.grouper(2, ascii_data, fillvalue=None):
                 if b is not None:
-                    buf.write(QRCodeBuilder.binary_string(45 * a + b, 11))
+                    buf.write(binary_str(45 * a + b, 11))
                 else:
                     # This occurs when there is an odd number
                     # of characters in the data
-                    buf.write(QRCodeBuilder.binary_string(a, 6))
+                    buf.write(binary_str(a, 6))
             # Return the binary string
             return buf.getvalue()
 
@@ -351,38 +352,25 @@ class QRCodeBuilder:
         """This method encodes the QR code's data if its mode is
         numeric. It returns the data encoded as a binary string.
         """
+        data = self.data
+        binary_str = QRCodeBuilder.binary_string
         with io.StringIO() as buf:
             # Break the number into groups of three digits
-            for triplet in QRCodeBuilder.grouper(3, self.data):
-                number = ''
-                for digit in triplet:
-                    if isinstance(digit, int):
-                        digit = chr(digit)
-                    # Only build the string if digit is not None
-                    if digit:
-                        number = ''.join([number, digit])
-                    else:
-                        break
-                # If the number is one digits, make a 4 bit field
-                if len(number) == 1:
-                    bin = QRCodeBuilder.binary_string(number, 4)
-                elif len(number) == 2:  # If the number is two digits, make a 7 bit field
-                    bin = QRCodeBuilder.binary_string(number, 7)
-                else:  # Three digit numbers use a 10 bit field
-                    bin = QRCodeBuilder.binary_string(number, 10)
-                buf.write(bin)
+            for i in range(0, len(data), 3):
+                chunk = data[i:i + 3]
+                buf.write(binary_str(chunk, len(chunk) * 3 + 1))
             return buf.getvalue()
 
     def encode_bytes(self):
         """This method encodes the QR code's data if its mode is
         8 bit mode. It returns the data encoded as a binary string.
         """
+        binary_str = QRCodeBuilder.binary_string
         with io.StringIO() as buf:
             for char in self.data:
                 if not isinstance(char, int):
-                    buf.write('{{0:0{0}b}}'.format(8).format(ord(char)))
-                else:
-                    buf.write('{{0:0{0}b}}'.format(8).format(char))
+                    char = ord(char)
+                buf.write(binary_str(char, 8))
             return buf.getvalue()
 
     def encode_kanji(self):
@@ -428,8 +416,9 @@ class QRCodeBuilder:
         """This function properly constructs a QR code's data string. It takes
         into account the interleaving pattern required by the standard.
         """
+        binary_str = QRCodeBuilder.binary_string
         # Encode the data into a QR code
-        self.buffer.write(QRCodeBuilder.binary_string(self.mode_num, 4))
+        self.buffer.write(binary_str(self.mode_num, 4))
         self.buffer.write(self.get_data_length())
         self.buffer.write(self.encode(self.mode_num))
         # Converts the buffer into "code word" integers.
@@ -495,12 +484,12 @@ class QRCodeBuilder:
         for i in range(largest_block):
             for block in data_blocks:
                 if i < len(block):
-                    data_buffer.write(QRCodeBuilder.binary_string(block[i], 8))
+                    data_buffer.write(binary_str(block[i], 8))
         # Add the error code blocks.
         # Write the buffer such that: block 1 byte 1, block 2 byte 2, etc.
         for i in range(error_info[0]):
             for block in error_blocks:
-                data_buffer.write(QRCodeBuilder.binary_string(block[i], 8))
+                data_buffer.write(binary_str(block[i], 8))
         self.buffer = data_buffer
 
     def terminate_bits(self, payload):
@@ -674,19 +663,20 @@ class QRCodeBuilder:
         # To keep the code short, it draws an extra box
         # in the lower right corner, this removes it.
         for i in range(-8, 0):
+            row = matrix[i]
             for j in range(-8, 0):
-                matrix[i][j] = None
+                row[j] = None
 
     @staticmethod
     def add_timing_pattern(matrix):
         """Adds the timing pattern
         """
-        # Add the timing pattern
-        bit = itertools.cycle([1,0])
-        for i in range(8, (len(matrix) - 8)):
-            b = next(bit)
-            matrix[i][6] = b
-            matrix[6][i] = b
+        bit = 1
+        row_6 = matrix[6]
+        for i in range(8, len(matrix) - 8):
+            matrix[i][6] = bit
+            row_6[i] = bit
+            bit ^= 1
 
     @staticmethod
     def add_position_pattern(matrix, version):
@@ -1178,7 +1168,7 @@ def _png(code, version, file, scale=1, module_color=(0, 0, 0, 255),
             (default: ``4``). Set to zero (``0``) if the code shouldn't
             have a border.
     """
-    if not _PYPNG_AVAILABLE:
+    if not _PYPNG_AVAILABLE:  # pragma: no cover
         raise ValueError('PNG support needs PyPNG. Please install via pip --install pypng')
     # Coerce scale parameter into an integer
     try:
@@ -1196,7 +1186,14 @@ def _png(code, version, file, scale=1, module_color=(0, 0, 0, 255),
                 yield bit
 
     def png_row(row):
-        row = tuple(row)
+        """\
+        This yields a 'packed' row.
+        This should be much faster in conjunction with png.Writer.write_packed
+        especially if the scaling factor is > 1 since the row must be packed
+        only once.
+        """
+        row = bytearray(reduce(lambda x, y: (x << 1) + y, e)
+                                for e in zip_longest(*[iter(row)] * 8, fillvalue=0x0))
         for i in scale_range:
             yield row
 
@@ -1248,7 +1245,7 @@ def _png(code, version, file, scale=1, module_color=(0, 0, 0, 255),
                    transparent=transparent_color, palette=palette,
                    bitdepth=1)
     with _writable(file, 'wb') as f:
-        w.write_passes(f, chain.from_iterable(map(png_row, (map(png_bits, _matrix_iter(code, version,
+        w.write_packed(f, chain.from_iterable(map(png_row, (map(png_bits, _matrix_iter(code, version,
                                                             scale=1,
                                                             quiet_zone=quiet_zone))))))
 

@@ -136,6 +136,13 @@ class QRCode:
 
     @property
     def designator(self):
+        """Returns the version and error level.
+
+        This property encodes the version and error correction level in a string
+        ``V-E``, where "V" represents the version and "E" the error level.
+
+        :rtype: str
+        """
         return '-'.join([str(self.version), self.error])
 
     def __str__(self):

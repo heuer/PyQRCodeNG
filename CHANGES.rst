@@ -6,6 +6,11 @@ Changes
 * Don't raise a UnicodeError if the user provided binary data and sets
   the mode explicitly to 'binary'.
   Fixed by Mathieu <https://github.com/albatros69> (PR #13)
+* The builder raises more specific exceptions like ``VersionError``, ``MaskError``,
+  ``DataOverflowError``. This change is backwards compatible since all
+  exceptions are inherited from ``ValueError``.
+* Added "designator" property to QRCode. This encodes the version number and
+  error correction level, i.e. "1-H"
 
 
 1.3.4 - 2019-07-07

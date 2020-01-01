@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2013, Michael Nooner
-# Copyright (c) 2018 - 2019, Lars Heuer
+# Copyright (c) 2018 - 2020, Lars Heuer
 # All rights reserved.
 #
 # License: BSD License
@@ -70,46 +70,51 @@ class QRCodeBuilder:
     def __init__(self, content, version, mode, error, encoding=None):
         """See :py:class:`pyqrcode.QRCode` for information on the parameters."""
 
-        # Guess the mode of the code, this will also be used for
-        # error checking
-        guessed_content_type, guessed_encoding = QRCodeBuilder._detect_content_type(content, encoding)
-
-        if isinstance(content, int):
-            content = str(content)
-
-        encoding_provided = encoding is not None
-        if not encoding_provided:
-            encoding = 'iso-8859-1' if guessed_encoding is None else guessed_encoding
-
-        # Store the encoding for use later
-        if guessed_content_type == 'kanji':
-            self.encoding = 'shiftjis'
-        else:
-            self.encoding = encoding
-
         if version is not None:
             if 1 <= version <= 40:
                 self.version = version
             else:
-                raise ValueError("Illegal version {0}, version must be between "
-                                 "1 and 40.".format(version))
-        # Decode a 'byte array' contents into a string format
-        if isinstance(content, bytes):
-            self.data = content.decode(encoding)
-        # Give a string an encoding
-        elif hasattr(content, 'encode'):
-            try:
-                self.data = content.encode(self.encoding)
-            except UnicodeEncodeError as ex:
-                if not encoding_provided:
-                    self.encoding = 'utf-8'
-                    self.data = content.encode(self.encoding)
-                else:
-                    raise ex
+                raise VersionError("Illegal version {0}, version must be between "
+                                    "1 and 40.".format(version))
+
+        # Guess the mode of the code, this will also be used for
+        # error checking
+        guessed_content_type, guessed_encoding = QRCodeBuilder._detect_content_type(content, encoding)
+
+        if mode == 'binary' and isinstance(content, bytes):
+            self.data = content
+            self.encoding = None
         else:
-            # The contents are not a byte array or string, so
-            # try naively converting to a string representation.
-            self.data = str(content)  # str == unicode in Py 2.x, see file head
+            if isinstance(content, int):
+                content = str(content)
+
+            encoding_provided = encoding is not None
+            if not encoding_provided:
+                encoding = 'iso-8859-1' if guessed_encoding is None else guessed_encoding
+
+            # Store the encoding for use later
+            if guessed_content_type == 'kanji':
+                self.encoding = 'shiftjis'
+            else:
+                self.encoding = encoding
+
+            # Decode a 'byte array' contents into a string format
+            if isinstance(content, bytes):
+                self.data = content.decode(encoding)
+            # Give a string an encoding
+            elif hasattr(content, 'encode'):
+                try:
+                    self.data = content.encode(self.encoding)
+                except UnicodeEncodeError as ex:
+                    if not encoding_provided:
+                        self.encoding = 'utf-8'
+                        self.data = content.encode(self.encoding)
+                    else:
+                        raise ex
+            else:
+                # The contents are not a byte array or string, so
+                # try naively converting to a string representation.
+                self.data = str(content)  # str == unicode in Py 2.x, see file head
 
         if mode is None:
             # Use the guessed mode
@@ -120,23 +125,23 @@ class QRCodeBuilder:
             try:
                 self.mode_num = tables.modes[mode]
             except KeyError:
-                raise ValueError('{0} is not a valid mode.'.format(mode))
+                raise ModeError('{0} is not a valid mode.'.format(mode))
             if guessed_content_type != mode:
                 # Binary is only guessed as a last resort, if the
                 # passed in mode is not binary the data won't encode
                 if guessed_content_type == 'binary':
-                    raise ValueError('The content provided cannot be encoded with '
+                    raise DataOverflowError('The content provided cannot be encoded with '
                                      'the mode {}, it can only be encoded as '
                                      'binary.'.format(mode))
                 elif mode in ('numeric', 'kanji'):
-                    raise ValueError('The content cannot be encoded as {0}. Proposal: "{1}".'.format(mode, guessed_content_type))
+                    raise DataOverflowError('The content cannot be encoded as {0}. Proposal: "{1}".'.format(mode, guessed_content_type))
         self.mode = mode
         self.mode_num = tables.modes[mode]
         # Check that the user passed in a valid error level
         try:
             self.error = tables.error_level[error]
         except KeyError:
-            raise ValueError('{0} is not a valid error level.'.format(error))
+            raise ErrorLevelError('{0} is not a valid error level.'.format(error))
 
         # Guess the "best" version
         guessed_version = QRCodeBuilder._pick_best_fit(self.data, error=self.error,
@@ -147,10 +152,10 @@ class QRCodeBuilder:
         # If the user supplied a version, then check that it has
         # sufficient data capacity for the contents passed in
         if guessed_version > version:
-            raise ValueError('The data will not fit inside a version {} '
-                             'code with the given encoding and error '
-                             'level (the code must be at least a '
-                             'version {}).'.format(version, guessed_version))
+            raise DataOverflowError('The data will not fit inside a version {} '
+                                    'code with the given encoding and error '
+                                    'level (the code must be at least a '
+                                     'version {}).'.format(version, guessed_version))
 
         # Look up the proper row for error correction code words
         self.error_code_words = tables.eccwbi[version][self.error]
@@ -261,8 +266,8 @@ class QRCodeBuilder:
                 return version
             if capacity >= len(content):
                 return version
-        raise ValueError('The data will not fit in any QR code version '
-                         'with the given encoding and error level.')
+        raise DataOverflowError('The data will not fit in any QR code version '
+                                'with the given encoding and error level.')
 
 
     @staticmethod
@@ -305,8 +310,8 @@ class QRCodeBuilder:
         else:
             length_string = QRCodeBuilder.binary_string(len(self.data) / 2, data_length)
         if len(length_string) > data_length:
-            raise ValueError('The supplied data will not fit '
-                               'within this version of a QRCode.')
+            raise DataOverflowError('The supplied data will not fit '
+                                    'within this version of a QRCode.')
         return length_string
 
     def encode(self, mode_num):
@@ -327,14 +332,12 @@ class QRCodeBuilder:
         """This method encodes the QR code's data if its mode is
         alphanumeric. It returns the data encoded as a binary string.
         """
-        # Convert the string to upper case
-        self.data = self.data.upper()
         # Change the data such that it uses a QR code ascii table
         to_byte = tables.ALPHANUMERIC_CHARS.find
         ascii_data = map(to_byte, self.data)
         # Now perform the algorithm that will make the ascii into bit fields
         with io.StringIO() as buf:
-            for a, b in QRCodeBuilder.grouper(2, ascii_data, fillvalue=0):
+            for a, b in QRCodeBuilder.grouper(2, ascii_data, fillvalue=None):
                 if b is not None:
                     buf.write(QRCodeBuilder.binary_string(45 * a + b, 11))
                 else:
@@ -480,7 +483,7 @@ class QRCodeBuilder:
         # byte is supposed to be chopped off, but I cannot find that in the
         # standard! I am adding it to solve the bug, I believe it is correct.
         if current_byte < len(data):
-            raise ValueError('Too much data for this code version.')
+            raise DataOverflowError('Too much data for this code version.')
         # Calculate the error blocks
         for n, block in enumerate(data_blocks):
             error_blocks.append(self.make_error_block(block, n))
@@ -488,7 +491,7 @@ class QRCodeBuilder:
         data_buffer = io.StringIO()
         # Add the data blocks
         # Write the buffer such that: block 1 byte 1, block 2 byte 1, etc.
-        largest_block = max(error_info[2], error_info[4])+error_info[0]
+        largest_block = max(error_info[2], error_info[4]) + error_info[0]
         for i in range(largest_block):
             for block in data_blocks:
                 if i < len(block):
@@ -507,14 +510,14 @@ class QRCodeBuilder:
         """
         data_capacity = tables.data_capacity[self.version][self.error][0]
         if len(payload) > data_capacity:
-            raise ValueError('The supplied data will not fit '
-                             'within this version of a QR code.')
+            raise DataOverflowError('The supplied data will not fit '
+                                    'within this version of a QR code.')
         # We must add up to 4 zeros to make up for any shortfall in the
         # length of the data field.
         if len(payload) == data_capacity:
             return None
-        elif len(payload) <= data_capacity-4:
-            bits = QRCodeBuilder.binary_string(0,4)
+        elif len(payload) <= data_capacity - 4:
+            bits = QRCodeBuilder.binary_string(0, 4)
         else:
             # Make up any shortfall need with less than 4 zeros
             bits = QRCodeBuilder.binary_string(0, data_capacity - len(payload))
@@ -604,10 +607,13 @@ class QRCodeBuilder:
         # Create a template matrix we will build the codes with
         row = [None for x in range(matrix_size)]
         matrix = [list(row) for x in range(matrix_size)]
+        # Add the dark module
+        matrix[-8][8] = 1
         # Add mandatory information to the matrix
-        QRCodeBuilder.add_detection_pattern(matrix)
-        QRCodeBuilder.add_position_pattern(matrix, self.version)
+        QRCodeBuilder.add_finder_patterns(matrix)
+        QRCodeBuilder.add_alignment_patterns(matrix, self.version)
         QRCodeBuilder.add_version_pattern(matrix, self.version)
+        QRCodeBuilder.add_timing_pattern(matrix)
         # Create the various types of masks of the matrix
         masks = QRCodeBuilder.make_masks(matrix, self.buffer.getvalue(), self.error)
         best_mask = QRCodeBuilder.choose_best_mask(masks)
@@ -615,41 +621,53 @@ class QRCodeBuilder:
 
     @staticmethod
     def add_detection_pattern(matrix):
-        """This method add the detection patterns to the QR code. This lets
+        import warnings
+        warnings.warn('Deprecated since 1.3.5, use add_finder_patterns', DeprecationWarning)
+        QRCodeBuilder.add_finder_patterns(matrix)
+        # Add the dark module
+        matrix[-8][8] = 1
+        # Add timing pattern
+        QRCodeBuilder.add_timing_pattern(matrix)
+
+    @staticmethod
+    def add_finder_patterns(matrix):
+        """This method adds the finder patterns to the QR code. This lets
         the scanner orient the pattern. It is required for all QR codes.
-        The detection pattern consists of three boxes located at the upper
-        left, upper right, and lower left corners of the matrix. Also, two
-        special lines called the timing pattern is also necessary. Finally,
-        a single black pixel is added just above the lower left black box.
+        The finder pattern consists of three boxes located at the upper
+        left, upper right, and lower left corners of the matrix.
         """
         # Draw outer black box
         for i in range(7):
             inv = -(i + 1)
             for j in (0, 6, -1, -7):
-                matrix[j][i] = 1
+                row = matrix[j]
+                row[i] = 1
                 matrix[i][j] = 1
                 matrix[inv][j] = 1
-                matrix[j][inv] = 1
+                row[inv] = 1
         # Draw inner white box
         for i in range(1, 6):
             inv = -(i + 1)
             for j in (1, 5, -2, -6):
-                matrix[j][i] = 0
+                row = matrix[j]
+                row[i] = 0
                 matrix[i][j] = 0
                 matrix[inv][j] = 0
-                matrix[j][inv] = 0
+                row[inv] = 0
         # Draw inner black box
         for i in range(2, 5):
+            row = matrix[i]
             for j in range(2, 5):
                 inv = -(i + 1)
-                matrix[i][j] = 1
+                row[j] = 1
                 matrix[inv][j] = 1
                 matrix[j][inv] = 1
         # Draw white border
         for i in range(8):
             inv = -(i + 1)
+            row = matrix[i]
             for j in (7, -8):
-                matrix[i][j] = 0
+                row[j] = 0
                 matrix[j][i] = 0
                 matrix[inv][j] = 0
                 matrix[j][inv] = 0
@@ -658,20 +676,29 @@ class QRCodeBuilder:
         for i in range(-8, 0):
             for j in range(-8, 0):
                 matrix[i][j] = None
+
+    @staticmethod
+    def add_timing_pattern(matrix):
+        """Adds the timing pattern
+        """
         # Add the timing pattern
         bit = itertools.cycle([1,0])
         for i in range(8, (len(matrix) - 8)):
             b = next(bit)
             matrix[i][6] = b
             matrix[6][i] = b
-        # Add the extra black pixel
-        matrix[-8][8] = 1
 
     @staticmethod
     def add_position_pattern(matrix, version):
-        """This method draws the position adjustment patterns onto the QR
+        import warnings
+        warnings.warn('Deprecated since 1.3.5, use add_alignment_patterns', DeprecationWarning)
+        QRCodeBuilder.add_alignment_patterns(matrix, version)
+
+    @staticmethod
+    def add_alignment_patterns(matrix, version):
+        """This method draws the alignment patterns onto the QR
         Code. All QR code versions larger than one require these special boxes
-        called position adjustment patterns.
+        called position alignment patterns.
         """
         # Version 1 does not have a position adjustment pattern
         if version == 1:
@@ -689,13 +716,14 @@ class QRCodeBuilder:
                (i == min_coord and j == max_coord) or \
                (i == max_coord and j == min_coord):
                 continue
+            row = matrix[i]
             # Center black pixel
-            matrix[i][j] = 1
+            row[j] = 1
             # Surround the pixel with a white box
             for x in (-1, 1):
                 matrix[i + x][j + x] = 0
                 matrix[i + x][j] = 0
-                matrix[i][j + x] = 0
+                row[j + x] = 0
                 matrix[i - x][j + x] = 0
                 matrix[i + x][j - x] = 0
             # Surround the white box with a black box
@@ -725,11 +753,12 @@ class QRCodeBuilder:
         start = len(matrix) - 11
         # The version pattern is pretty odd looking
         for i in range(6):
+            row = matrix[i]
             # The pattern is three modules wide
             for j in range(start, start + 3):
                 bit = int(next(field))
                 # Bottom Left
-                matrix[i][j] = bit
+                row[j] = bit
                 # Upper right
                 matrix[j][i] = bit
 
@@ -763,8 +792,7 @@ class QRCodeBuilder:
                 # right-left, right-left, etc.
                 column_pair = itertools.cycle([column, column - 1])
                 # Go through each row in the pattern moving up, then down
-                for i in range(next(row_start), next(row_stop),
-                                 next(direction)):
+                for i in range(next(row_start), next(row_stop), next(direction)):
                     row = cur_mask[i]
                     # Fill in the right then left column
                     for x in range(2):
@@ -781,10 +809,7 @@ class QRCodeBuilder:
                         except:
                             bit = 0
                         # If the pattern is True then flip the bit
-                        if pattern(i, j):
-                            cur_mask[i][j] = bit ^ 1
-                        else:
-                            cur_mask[i][j] = bit
+                        row[j] = bit ^ pattern(i, j)
         return masks
 
     @staticmethod
@@ -1459,7 +1484,6 @@ def _terminal_win(code, version, quiet_zone=None):  # pragma: no cover
         write('\n')
 
 
-
 def _terminal_deprecated(code, module_color='default', background='reverse', quiet_zone=4):
     """This method returns a string containing ASCII escape codes,
     such that if printed to a terminal, it will display a vaild
@@ -1566,3 +1590,43 @@ def _terminal_deprecated(code, module_color='default', background='reverse', qui
         buf.write('\n')
 
     return buf.getvalue()
+
+
+#
+# The exceptions are copied from Segno <https://pypi.org/project/segno/>  by 1:1
+#
+class QRCodeError(ValueError):
+    """\
+    Generic QR Code error.
+    """
+
+
+class VersionError(QRCodeError):
+    """\
+    Indicates errors related to the QR Code version.
+    """
+
+
+class ModeError(QRCodeError):
+    """\
+    Indicates errors related to QR Code mode.
+    """
+
+
+class ErrorLevelError(QRCodeError):
+    """\
+    Indicates errors related to QR Code error correction level.
+    """
+
+
+class MaskError(QRCodeError):
+    """\
+    Indicates errors related to QR Code data mask.
+    """
+
+
+class DataOverflowError(QRCodeError):
+    """\
+    Indicates a problem that the provided data does not fit into the
+    provided QR Code version or the data is too large in general.
+    """

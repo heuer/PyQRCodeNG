@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) 2013, Michael Nooner
-# Copyright (c) 2018 - 2019, Lars Heuer
+# Copyright (c) 2018 - 2020, Lars Heuer
 # All rights reserved.
 #
 # License: BSD License
@@ -25,17 +25,20 @@ from __future__ import absolute_import, division, print_function, with_statement
 import sys
 import io
 import base64
-import pyqrcodeng.tables
 import pyqrcodeng.builder as builder
+from pyqrcodeng.builder import DataOverflowError, VersionError, MaskError, ModeError, ErrorLevelError
 try:  # pragma: no cover
     str = unicode  # Python 2
 except NameError:
     pass
 
+__all__ = ('create', 'QRCode', 'DataOverflowError', 'VersionError', 'MaskError',
+           'ModeError', 'ErrorLevelError')
+
 # <https://wiki.python.org/moin/PortingToPy3k/BilingualQuickRef#New_Style_Classes>
 __metaclass__ = type
 
-__version__ = '1.3.4'
+__version__ = '1.3.5'
 
 
 def create(content, error='H', version=None, mode=None, encoding=None):
@@ -131,6 +134,17 @@ class QRCode:
         self.mode = self.builder.mode
         self.error = self.builder.error
 
+    @property
+    def designator(self):
+        """Returns the version and error level.
+
+        This property encodes the version and error correction level in a string
+        ``V-E``, where "V" represents the version and "E" the error level.
+
+        :rtype: str
+        """
+        return '-'.join([str(self.version), self.error])
+
     def __str__(self):
         return repr(self)
 
@@ -164,12 +178,12 @@ class QRCode:
         import tempfile
         import webbrowser
  
-        try:  # Python 2
-            from urlparse import urljoin
-            from urllib import pathname2url
-        except ImportError:  # Python 3
+        try:  # Python 3
             from urllib.parse import urljoin
             from urllib.request import pathname2url
+        except ImportError:  # Python 2
+            from urlparse import urljoin
+            from urllib import pathname2url
 
         f = tempfile.NamedTemporaryFile('wb', suffix='.png', delete=False)
         self.png(f, scale=scale, module_color=module_color,
@@ -290,11 +304,6 @@ class QRCode:
         to that method's documentation for the meaning behind the parameters.
 
         .. deprecated:: 1.3.0
-        
-        .. note::
-            This method depends on the Segno package to actually create the
-            PNG image.
-
         """
         import warnings
         warnings.warn('This method is deprecated, use png_data_uri', category=DeprecationWarning)

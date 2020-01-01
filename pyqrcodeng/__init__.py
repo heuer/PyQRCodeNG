@@ -134,6 +134,10 @@ class QRCode:
         self.mode = self.builder.mode
         self.error = self.builder.error
 
+    @property
+    def designator(self):
+        return '-'.join([str(self.version), self.error])
+
     def __str__(self):
         return repr(self)
 

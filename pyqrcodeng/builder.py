@@ -1486,7 +1486,6 @@ def _terminal_win(code, version, quiet_zone=None):  # pragma: no cover
         write('\n')
 
 
-
 def _terminal_deprecated(code, module_color='default', background='reverse', quiet_zone=4):
     """This method returns a string containing ASCII escape codes,
     such that if printed to a terminal, it will display a vaild

@@ -1,7 +1,7 @@
 Changes
 =======
 
-1.3.6 - 2020-mm-dd
+1.3.6 - 2020-01-01
 ------------------
 * Code improvements / refactorings
 * Optimized generation of numerical QR Codes

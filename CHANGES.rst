@@ -1,6 +1,13 @@
 Changes
 =======
 
+1.3.6 - 2020-mm-dd
+------------------
+* Code improvements / refactorings
+* Optimized generation of numerical QR Codes
+* MUCH faster PNG writing (approx. twice as fast)
+
+
 1.3.5 - 2020-01-01
 ------------------
 * Don't raise a UnicodeError if the user provided binary data and sets

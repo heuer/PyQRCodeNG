@@ -11,6 +11,8 @@ Changes
   exceptions are inherited from ``ValueError``.
 * Added "designator" property to QRCode. This encodes the version number and
   error correction level, i.e. "1-H"
+* Fixed alphanumeric encoding. The bug was introduced in the 1.3.4 release
+* Added more test cases
 
 
 1.3.4 - 2019-07-07

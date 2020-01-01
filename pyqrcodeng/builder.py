@@ -493,7 +493,7 @@ class QRCodeBuilder:
         data_buffer = io.StringIO()
         # Add the data blocks
         # Write the buffer such that: block 1 byte 1, block 2 byte 1, etc.
-        largest_block = max(error_info[2], error_info[4])+error_info[0]
+        largest_block = max(error_info[2], error_info[4]) + error_info[0]
         for i in range(largest_block):
             for block in data_blocks:
                 if i < len(block):
@@ -518,8 +518,8 @@ class QRCodeBuilder:
         # length of the data field.
         if len(payload) == data_capacity:
             return None
-        elif len(payload) <= data_capacity-4:
-            bits = QRCodeBuilder.binary_string(0,4)
+        elif len(payload) <= data_capacity - 4:
+            bits = QRCodeBuilder.binary_string(0, 4)
         else:
             # Make up any shortfall need with less than 4 zeros
             bits = QRCodeBuilder.binary_string(0, data_capacity - len(payload))

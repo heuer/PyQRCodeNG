@@ -1192,7 +1192,8 @@ def _png(code, version, file, scale=1, module_color=(0, 0, 0, 255),
         especially if the scaling factor is > 1 since the row must be packed
         only once.
         """
-        row = tuple(png.pack_rows([row], 1))[0]
+        row = bytearray(reduce(lambda x, y: (x << 1) + y, e)
+                                for e in zip_longest(*[iter(row)] * 8, fillvalue=0x0))
         for i in scale_range:
             yield row
 

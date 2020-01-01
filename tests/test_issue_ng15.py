@@ -18,6 +18,7 @@ def test_version_and_error_provided():
     qr = pyqrcode.create('A' * 25, version=1, error='l')
     assert 1 == qr.version
     assert 'L' == qr.error
+    assert '1-L' == qr.designator
 
 
 if __name__ == '__main__':

@@ -2,4 +2,5 @@ PyQRCodeNG Module Documentation
 *******************************
 
 .. automodule:: pyqrcodeng
-    :members: create, QRCode
+    :member-order: bysource
+    :members:

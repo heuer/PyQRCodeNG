@@ -297,11 +297,6 @@ class QRCode:
         to that method's documentation for the meaning behind the parameters.
 
         .. deprecated:: 1.3.0
-        
-        .. note::
-            This method depends on the Segno package to actually create the
-            PNG image.
-
         """
         import warnings
         warnings.warn('This method is deprecated, use png_data_uri', category=DeprecationWarning)

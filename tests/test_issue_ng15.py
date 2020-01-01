@@ -8,7 +8,7 @@ import pytest
 
 
 def test_version_too_small():
-    with pytest.raises(ValueError):
+    with pytest.raises(pyqrcode.DataOverflowError):
         # QR Code version 1-L: Max. 25 alphanumeric chars
         pyqrcode.create('A' * 26, version=1, error='l')
 

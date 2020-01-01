@@ -74,8 +74,8 @@ class QRCodeBuilder:
             if 1 <= version <= 40:
                 self.version = version
             else:
-                raise ValueError("Illegal version {0}, version must be between "
-                                "1 and 40.".format(version))
+                raise VersionError("Illegal version {0}, version must be between "
+                                    "1 and 40.".format(version))
 
         # Guess the mode of the code, this will also be used for
         # error checking
@@ -125,23 +125,23 @@ class QRCodeBuilder:
             try:
                 self.mode_num = tables.modes[mode]
             except KeyError:
-                raise ValueError('{0} is not a valid mode.'.format(mode))
+                raise ModeError('{0} is not a valid mode.'.format(mode))
             if guessed_content_type != mode:
                 # Binary is only guessed as a last resort, if the
                 # passed in mode is not binary the data won't encode
                 if guessed_content_type == 'binary':
-                    raise ValueError('The content provided cannot be encoded with '
+                    raise DataOverflowError('The content provided cannot be encoded with '
                                      'the mode {}, it can only be encoded as '
                                      'binary.'.format(mode))
                 elif mode in ('numeric', 'kanji'):
-                    raise ValueError('The content cannot be encoded as {0}. Proposal: "{1}".'.format(mode, guessed_content_type))
+                    raise DataOverflowError('The content cannot be encoded as {0}. Proposal: "{1}".'.format(mode, guessed_content_type))
         self.mode = mode
         self.mode_num = tables.modes[mode]
         # Check that the user passed in a valid error level
         try:
             self.error = tables.error_level[error]
         except KeyError:
-            raise ValueError('{0} is not a valid error level.'.format(error))
+            raise ErrorLevelError('{0} is not a valid error level.'.format(error))
 
         # Guess the "best" version
         guessed_version = QRCodeBuilder._pick_best_fit(self.data, error=self.error,
@@ -152,10 +152,10 @@ class QRCodeBuilder:
         # If the user supplied a version, then check that it has
         # sufficient data capacity for the contents passed in
         if guessed_version > version:
-            raise ValueError('The data will not fit inside a version {} '
-                             'code with the given encoding and error '
-                             'level (the code must be at least a '
-                             'version {}).'.format(version, guessed_version))
+            raise DataOverflowError('The data will not fit inside a version {} '
+                                    'code with the given encoding and error '
+                                    'level (the code must be at least a '
+                                     'version {}).'.format(version, guessed_version))
 
         # Look up the proper row for error correction code words
         self.error_code_words = tables.eccwbi[version][self.error]
@@ -266,8 +266,8 @@ class QRCodeBuilder:
                 return version
             if capacity >= len(content):
                 return version
-        raise ValueError('The data will not fit in any QR code version '
-                         'with the given encoding and error level.')
+        raise DataOverflowError('The data will not fit in any QR code version '
+                                'with the given encoding and error level.')
 
 
     @staticmethod
@@ -310,8 +310,8 @@ class QRCodeBuilder:
         else:
             length_string = QRCodeBuilder.binary_string(len(self.data) / 2, data_length)
         if len(length_string) > data_length:
-            raise ValueError('The supplied data will not fit '
-                               'within this version of a QRCode.')
+            raise DataOverflowError('The supplied data will not fit '
+                                    'within this version of a QRCode.')
         return length_string
 
     def encode(self, mode_num):
@@ -485,7 +485,7 @@ class QRCodeBuilder:
         # byte is supposed to be chopped off, but I cannot find that in the
         # standard! I am adding it to solve the bug, I believe it is correct.
         if current_byte < len(data):
-            raise ValueError('Too much data for this code version.')
+            raise DataOverflowError('Too much data for this code version.')
         # Calculate the error blocks
         for n, block in enumerate(data_blocks):
             error_blocks.append(self.make_error_block(block, n))
@@ -512,8 +512,8 @@ class QRCodeBuilder:
         """
         data_capacity = tables.data_capacity[self.version][self.error][0]
         if len(payload) > data_capacity:
-            raise ValueError('The supplied data will not fit '
-                             'within this version of a QR code.')
+            raise DataOverflowError('The supplied data will not fit '
+                                    'within this version of a QR code.')
         # We must add up to 4 zeros to make up for any shortfall in the
         # length of the data field.
         if len(payload) == data_capacity:
@@ -1593,3 +1593,43 @@ def _terminal_deprecated(code, module_color='default', background='reverse', qui
         buf.write('\n')
 
     return buf.getvalue()
+
+
+#
+# The exceptions are copied from Segno <https://pypi.org/project/segno/>  by 1:1
+#
+class QRCodeError(ValueError):
+    """\
+    Generic QR Code error.
+    """
+
+
+class VersionError(QRCodeError):
+    """\
+    Indicates errors related to the QR Code version.
+    """
+
+
+class ModeError(QRCodeError):
+    """\
+    Indicates errors related to QR Code mode.
+    """
+
+
+class ErrorLevelError(QRCodeError):
+    """\
+    Indicates errors related to QR Code error correction level.
+    """
+
+
+class MaskError(QRCodeError):
+    """\
+    Indicates errors related to QR Code data mask.
+    """
+
+
+class DataOverflowError(QRCodeError):
+    """\
+    Indicates a problem that the provided data does not fit into the
+    provided QR Code version or the data is too large in general.
+    """

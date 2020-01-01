@@ -26,6 +26,7 @@ import sys
 import io
 import base64
 import pyqrcodeng.builder as builder
+from pyqrcodeng.builder import DataOverflowError, VersionError, MaskError, ModeError, ErrorLevelError
 try:  # pragma: no cover
     str = unicode  # Python 2
 except NameError:

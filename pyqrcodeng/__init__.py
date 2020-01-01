@@ -32,6 +32,9 @@ try:  # pragma: no cover
 except NameError:
     pass
 
+__all__ = ('create', 'QRCode', 'DataOverflowError', 'VersionError', 'MaskError',
+           'ModeError', 'ErrorLevelError')
+
 # <https://wiki.python.org/moin/PortingToPy3k/BilingualQuickRef#New_Style_Classes>
 __metaclass__ = type
 

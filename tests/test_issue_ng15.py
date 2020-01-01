@@ -17,12 +17,14 @@ def test_numeric_defaults():
     qr = pyqrcode.create('1' * 17)  # Capacity of a 1-H (numeric): 17
     assert '1-H' == qr.designator
     assert 'numeric' == qr.mode
+    assert b'1' * 17 == qr.data
 
 
 def test_numeric_explicit_error():
     qr = pyqrcode.create('1' * 41, error='l')  # Capacity of a 1-L (numeric): 41
     assert '1-L' == qr.designator
     assert 'numeric' == qr.mode
+    assert b'1' * 41 == qr.data
 
 
 def test_version_and_error_provided():
@@ -32,6 +34,7 @@ def test_version_and_error_provided():
     assert 'L' == qr.error
     assert '1-L' == qr.designator
     assert 'alphanumeric' == qr.mode
+    assert b'A' * 25 == qr.data
 
 
 if __name__ == '__main__':

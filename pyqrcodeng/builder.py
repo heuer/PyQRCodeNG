@@ -332,14 +332,12 @@ class QRCodeBuilder:
         """This method encodes the QR code's data if its mode is
         alphanumeric. It returns the data encoded as a binary string.
         """
-        # Convert the string to upper case
-        self.data = self.data.upper()
         # Change the data such that it uses a QR code ascii table
         to_byte = tables.ALPHANUMERIC_CHARS.find
         ascii_data = map(to_byte, self.data)
         # Now perform the algorithm that will make the ascii into bit fields
         with io.StringIO() as buf:
-            for a, b in QRCodeBuilder.grouper(2, ascii_data, fillvalue=0):
+            for a, b in QRCodeBuilder.grouper(2, ascii_data, fillvalue=None):
                 if b is not None:
                     buf.write(QRCodeBuilder.binary_string(45 * a + b, 11))
                 else:

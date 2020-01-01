@@ -32,10 +32,10 @@ except ImportError:  # pragma: no cover
     str = unicode
     open = io.open
 _PYPNG_AVAILABLE = False
-try:
+try:  # pragma: no cover
     import png
     _PYPNG_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover
     pass
 
 _ALPHANUMERIC_PATTERN = re.compile(br'^[' + re.escape(tables.ALPHANUMERIC_CHARS) + br']+\Z')
@@ -416,8 +416,9 @@ class QRCodeBuilder:
         """This function properly constructs a QR code's data string. It takes
         into account the interleaving pattern required by the standard.
         """
+        binary_str = QRCodeBuilder.binary_string
         # Encode the data into a QR code
-        self.buffer.write(QRCodeBuilder.binary_string(self.mode_num, 4))
+        self.buffer.write(binary_str(self.mode_num, 4))
         self.buffer.write(self.get_data_length())
         self.buffer.write(self.encode(self.mode_num))
         # Converts the buffer into "code word" integers.
@@ -483,12 +484,12 @@ class QRCodeBuilder:
         for i in range(largest_block):
             for block in data_blocks:
                 if i < len(block):
-                    data_buffer.write(QRCodeBuilder.binary_string(block[i], 8))
+                    data_buffer.write(binary_str(block[i], 8))
         # Add the error code blocks.
         # Write the buffer such that: block 1 byte 1, block 2 byte 2, etc.
         for i in range(error_info[0]):
             for block in error_blocks:
-                data_buffer.write(QRCodeBuilder.binary_string(block[i], 8))
+                data_buffer.write(binary_str(block[i], 8))
         self.buffer = data_buffer
 
     def terminate_bits(self, payload):
@@ -662,19 +663,20 @@ class QRCodeBuilder:
         # To keep the code short, it draws an extra box
         # in the lower right corner, this removes it.
         for i in range(-8, 0):
+            row = matrix[i]
             for j in range(-8, 0):
-                matrix[i][j] = None
+                row[j] = None
 
     @staticmethod
     def add_timing_pattern(matrix):
         """Adds the timing pattern
         """
-        # Add the timing pattern
-        bit = itertools.cycle([1,0])
-        for i in range(8, (len(matrix) - 8)):
-            b = next(bit)
-            matrix[i][6] = b
-            matrix[6][i] = b
+        bit = 1
+        row_6 = matrix[6]
+        for i in range(8, len(matrix) - 8):
+            matrix[i][6] = bit
+            row_6[i] = bit
+            bit ^= 1
 
     @staticmethod
     def add_position_pattern(matrix, version):
@@ -1166,7 +1168,7 @@ def _png(code, version, file, scale=1, module_color=(0, 0, 0, 255),
             (default: ``4``). Set to zero (``0``) if the code shouldn't
             have a border.
     """
-    if not _PYPNG_AVAILABLE:
+    if not _PYPNG_AVAILABLE:  # pragma: no cover
         raise ValueError('PNG support needs PyPNG. Please install via pip --install pypng')
     # Coerce scale parameter into an integer
     try:

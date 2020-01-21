@@ -1,3 +1,9 @@
+Unmaintained
+============
+
+See <https://github.com/pyqrcode/pyqrcodeNG/issues/16>
+
+
 PyQRCodeNG
 ==========
 

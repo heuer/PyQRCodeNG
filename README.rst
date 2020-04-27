@@ -2,6 +2,7 @@ Unmaintained
 ============
 
 See <https://github.com/pyqrcode/pyqrcodeNG/issues/16>
+Maintained alternative <https://github.com/heuer/segno>
 
 
 PyQRCodeNG

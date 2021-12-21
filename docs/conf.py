@@ -49,7 +49,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'pyqrcodeng'
-copyright = '2013-2016, Michael Nooner, 2018 - {0} Lars Heuer'.format(datetime.datetime.now().year)
+copyright = '2013-2016, Michael Nooner, 2018-2021 Lars Heuer'
 author = 'Michael Nooner, Lars Heuer'
 
 # The version info for the project you're documenting, acts as replacement for
